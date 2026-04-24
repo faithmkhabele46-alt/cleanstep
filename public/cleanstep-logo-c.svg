@@ -1,0 +1,8 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" fill="#F6F7FB"/>
+  <path d="M15 190C210 145 460 145 702 205C825 235 918 275 1015 350C915 305 792 293 680 312C516 339 377 423 249 545C166 624 116 688 68 754L15 190Z" fill="#E1251B"/>
+  <path d="M1192 446C1168 660 1072 780 915 842C790 892 641 894 516 848C665 874 808 838 915 735C1019 637 1094 525 1192 446Z" fill="#1F4B8F"/>
+  <path d="M615 320C647 314 677 322 700 352C720 378 727 410 723 449C715 517 679 576 636 598C597 619 562 611 534 576C510 545 501 505 505 458C511 398 544 343 590 326C598 323 606 321 615 320Z" fill="#E1251B"/>
+  <text x="610" y="560" text-anchor="middle" fill="#F6F7FB" font-family="Georgia, serif" font-size="220" font-style="italic" font-weight="700">C</text>
+  <text x="140" y="690" fill="#4B4044" font-family="Georgia, serif" font-size="92" letter-spacing="24">CLEANSTEP</text>
+</svg>
