@@ -2,7 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { services } from "./services/data";
 
-const serviceCards = [
+const serviceCards: Array<{
+  id: keyof typeof services;
+  label: string;
+  accent: string;
+}> = [
   {
     id: "footwear",
     label: "Footwear Cleaning",
@@ -54,7 +58,7 @@ export default function HomePage() {
 
             <div className="mt-8 grid gap-4">
               {serviceCards.map((card) => {
-                const service = services[card.id];
+                const service = services[card.id as keyof typeof services];
 
                 return (
                   <Link
