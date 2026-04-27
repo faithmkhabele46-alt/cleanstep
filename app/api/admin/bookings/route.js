@@ -16,7 +16,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, booking_code, service_id, service_title, primary_item, location, booking_date, booking_time, total, deposit, status, customer_name, customer_email, customer_phone, selections, created_at",
+      "id, booking_code, service_title, primary_item, location, booking_date, booking_time, total, deposit, status, customer_name, customer_email, customer_phone, selections, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(100);
