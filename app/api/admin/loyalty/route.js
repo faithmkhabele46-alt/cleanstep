@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAdminAuthenticated } from "../../../lib/admin-auth";
 import { createServerSupabaseClient } from "../../../lib/supabase-server";
 import {
   buildLoyaltyDashboardUrl,
@@ -39,6 +40,17 @@ async function loadRecentVisits(supabase) {
 }
 
 export async function GET() {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        configured: true,
+        message: "Admin sign-in is required.",
+        items: [],
+      },
+      { status: 401 },
+    );
+  }
+
   const supabase = createServerSupabaseClient();
 
   if (!supabase) {
@@ -71,6 +83,16 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
   const supabase = createServerSupabaseClient();
 
   if (!supabase) {

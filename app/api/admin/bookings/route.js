@@ -1,7 +1,19 @@
 import { NextResponse } from "next/server";
+import { isAdminAuthenticated } from "../../../lib/admin-auth";
 import { createServerSupabaseClient } from "../../../lib/supabase-server";
 
 export async function GET() {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        items: [],
+        configured: true,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
   const supabase = createServerSupabaseClient();
 
   if (!supabase) {

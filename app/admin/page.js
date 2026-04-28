@@ -123,6 +123,19 @@ function BookingCard({ booking }) {
 }
 
 export default function AdminPage() {
+  const [authState, setAuthState] = useState({
+    loading: true,
+    configured: false,
+    authenticated: false,
+    message: "",
+  });
+  const [loginForm, setLoginForm] = useState({
+    password: "",
+  });
+  const [loginState, setLoginState] = useState({
+    loading: false,
+    error: "",
+  });
   const [bookingState, setBookingState] = useState({
     loading: true,
     configured: false,
@@ -157,26 +170,74 @@ export default function AdminPage() {
   useEffect(() => {
     let mounted = true;
 
-    async function loadBookings() {
+    async function loadAdminData() {
       try {
-        const response = await fetch("/api/admin/bookings", { cache: "no-store" });
-        const data = await response.json();
+        const authResponse = await fetch("/api/admin/session", { cache: "no-store" });
+        const authData = await authResponse.json();
 
         if (!mounted) {
           return;
         }
 
+        setAuthState({
+          loading: false,
+          configured: authData.configured,
+          authenticated: authData.authenticated,
+          message: authData.message || "",
+        });
+
+        if (!authData.authenticated) {
+          setBookingState({
+            loading: false,
+            configured: false,
+            message: "",
+            items: [],
+          });
+          setLoyaltyState({
+            loading: false,
+            configured: false,
+            message: "",
+            items: [],
+          });
+          return;
+        }
+
+        const [bookingResponse, loyaltyResponse] = await Promise.all([
+          fetch("/api/admin/bookings", { cache: "no-store" }),
+          fetch("/api/admin/loyalty", { cache: "no-store" }),
+        ]);
+        const bookingData = await bookingResponse.json();
+        const loyaltyData = await loyaltyResponse.json();
+
         setBookingState({
           loading: false,
-          configured: data.configured,
-          message: data.message,
-          items: data.items || [],
+          configured: bookingData.configured,
+          message: bookingData.message,
+          items: bookingData.items || [],
+        });
+        setLoyaltyState({
+          loading: false,
+          configured: loyaltyData.configured,
+          message: loyaltyData.message,
+          items: loyaltyData.items || [],
         });
       } catch (error) {
         if (!mounted) {
           return;
         }
 
+        setAuthState({
+          loading: false,
+          configured: false,
+          authenticated: false,
+          message: error.message || "Unable to load admin access.",
+        });
+        setLoyaltyState({
+          loading: false,
+          configured: false,
+          message: error.message || "Unable to load loyalty visits.",
+          items: [],
+        });
         setBookingState({
           loading: false,
           configured: false,
@@ -186,37 +247,7 @@ export default function AdminPage() {
       }
     }
 
-    async function loadLoyaltyVisits() {
-      try {
-        const response = await fetch("/api/admin/loyalty", { cache: "no-store" });
-        const data = await response.json();
-
-        if (!mounted) {
-          return;
-        }
-
-        setLoyaltyState({
-          loading: false,
-          configured: data.configured,
-          message: data.message,
-          items: data.items || [],
-        });
-      } catch (error) {
-        if (!mounted) {
-          return;
-        }
-
-        setLoyaltyState({
-          loading: false,
-          configured: false,
-          message: error.message || "Unable to load loyalty visits.",
-          items: [],
-        });
-      }
-    }
-
-    loadBookings();
-    loadLoyaltyVisits();
+    loadAdminData();
 
     return () => {
       mounted = false;
@@ -243,6 +274,99 @@ export default function AdminPage() {
       ...current,
       quantity: Math.min(10, Math.max(1, nextValue)),
     }));
+  }
+
+  async function handleAdminLogin(event) {
+    event.preventDefault();
+    setLoginState({
+      loading: true,
+      error: "",
+    });
+
+    try {
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          password: loginForm.password,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to sign in.");
+      }
+
+      setAuthState((current) => ({
+        ...current,
+        authenticated: true,
+        message: "",
+      }));
+      setLoginForm({
+        password: "",
+      });
+      setLoginState({
+        loading: false,
+        error: "",
+      });
+
+      const [bookingResponse, loyaltyResponse] = await Promise.all([
+        fetch("/api/admin/bookings", { cache: "no-store" }),
+        fetch("/api/admin/loyalty", { cache: "no-store" }),
+      ]);
+      const bookingData = await bookingResponse.json();
+      const loyaltyData = await loyaltyResponse.json();
+
+      setBookingState({
+        loading: false,
+        configured: bookingData.configured,
+        message: bookingData.message,
+        items: bookingData.items || [],
+      });
+      setLoyaltyState({
+        loading: false,
+        configured: loyaltyData.configured,
+        message: loyaltyData.message,
+        items: loyaltyData.items || [],
+      });
+    } catch (error) {
+      setLoginState({
+        loading: false,
+        error: error.message || "Unable to sign in.",
+      });
+    }
+  }
+
+  async function handleAdminLogout() {
+    await fetch("/api/admin/session", {
+      method: "DELETE",
+    });
+
+    setAuthState((current) => ({
+      ...current,
+      authenticated: false,
+    }));
+    setLoginForm({
+      password: "",
+    });
+    setLoginState({
+      loading: false,
+      error: "",
+    });
+    setBookingState({
+      loading: false,
+      configured: false,
+      message: "",
+      items: [],
+    });
+    setLoyaltyState({
+      loading: false,
+      configured: false,
+      message: "",
+      items: [],
+    });
   }
 
   async function handleLoyaltySubmit(event) {
@@ -335,6 +459,74 @@ export default function AdminPage() {
   );
   const visitSummaryLabel = getLoyaltyVisitLabel(loyaltyForm);
 
+  if (authState.loading) {
+    return (
+      <main className="min-h-screen bg-white px-4 py-8 text-[#3f363a]">
+        <div className="mx-auto max-w-3xl rounded-[32px] border border-[#1f4b8f]/14 bg-white p-8 shadow-[0_24px_80px_rgba(31,75,143,0.12)]">
+          <p className="text-sm text-[#5c5357]">Checking admin access...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!authState.authenticated) {
+    return (
+      <main className="min-h-screen bg-white px-4 py-8 text-[#3f363a]">
+        <div className="mx-auto max-w-3xl rounded-[32px] border border-[#1f4b8f]/14 bg-white p-8 shadow-[0_24px_80px_rgba(31,75,143,0.12)]">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="overflow-hidden rounded-3xl border border-white/10 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.12)]">
+              <Image
+                src="/cleanstep-logo-system.png"
+                alt="Cleanstep logo"
+                width={84}
+                height={84}
+                className="h-20 w-20 object-contain p-1"
+              />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.28em] text-[#1f4b8f]">Admin access only</p>
+              <h1 className="mt-2 text-3xl font-semibold text-[#3f363a]">Sign in to Cleanstep admin</h1>
+              <p className="mt-2 max-w-2xl text-sm text-[#5c5357]">
+                This page is now private. Only the Cleanstep team should be able to view bookings and loyalty visits.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAdminLogin} className="mt-8 rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-6">
+            <label className="text-sm font-semibold text-[#3f363a]" htmlFor="adminPassword">
+              Admin password
+            </label>
+            <input
+              id="adminPassword"
+              type="password"
+              value={loginForm.password}
+              onChange={(event) => setLoginForm({ password: event.target.value })}
+              className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+              placeholder="Enter the admin password"
+            />
+            {loginState.error && (
+              <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+                {loginState.error}
+              </div>
+            )}
+            {!authState.configured && authState.message && (
+              <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+                {authState.message}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loginState.loading || !authState.configured}
+              className="mt-6 w-full rounded-2xl bg-[#1f4b8f] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#173a70] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#8c8488]"
+            >
+              {loginState.loading ? "Signing in..." : "Open admin dashboard"}
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-white px-4 py-8 text-[#3f363a]">
       <div className="mx-auto max-w-6xl">
@@ -359,6 +551,13 @@ export default function AdminPage() {
                 </p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={handleAdminLogout}
+              className="rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] px-5 py-3 text-sm font-semibold text-[#e1251b] transition hover:bg-[#ffe7e4]"
+            >
+              Log out
+            </button>
           </div>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
