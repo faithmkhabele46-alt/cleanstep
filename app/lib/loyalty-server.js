@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from "./supabase-server";
 import {
   formatWhatsAppNumber,
   getLoyaltyProgress,
+  isQualifyingLoyaltyVisit,
   normalizeWhatsAppNumber,
 } from "./loyalty";
 
@@ -53,7 +54,7 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
 
   const { data: visits, error: visitsError } = await supabase
     .from("loyalty_visits")
-    .select("id, shoe_type, visit_date, receipt_number, notes, created_at")
+    .select("id, shoe_type, visit_date, receipt_number, notes, quantity, created_at")
     .eq("customer_id", customer.id)
     .order("visit_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -62,7 +63,19 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
     throw visitsError;
   }
 
-  const progress = getLoyaltyProgress(visits?.length || 0);
+  const mappedVisits =
+    visits?.map((visit) => ({
+      id: visit.id,
+      shoeType: visit.shoe_type,
+      visitDate: visit.visit_date,
+      receiptNumber: visit.receipt_number,
+      notes: visit.notes,
+      quantity: visit.quantity || 1,
+      qualifies: isQualifyingLoyaltyVisit(visit.quantity || 1),
+      createdAt: visit.created_at,
+    })) || [];
+  const qualifyingVisits = mappedVisits.filter((visit) => visit.qualifies).length;
+  const progress = getLoyaltyProgress(qualifyingVisits, mappedVisits.length);
 
   return {
     found: true,
@@ -73,15 +86,7 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
       whatsAppNumber: formatWhatsAppNumber(customer.whatsapp_number),
     },
     progress,
-    visits:
-      visits?.map((visit) => ({
-        id: visit.id,
-        shoeType: visit.shoe_type,
-        visitDate: visit.visit_date,
-        receiptNumber: visit.receipt_number,
-        notes: visit.notes,
-        createdAt: visit.created_at,
-      })) || [],
+    visits: mappedVisits,
   };
 }
 

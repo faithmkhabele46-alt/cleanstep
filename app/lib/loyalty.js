@@ -1,4 +1,5 @@
-export const LOYALTY_REWARD_TARGET = 10;
+export const LOYALTY_REWARD_TARGET = 5;
+export const LOYALTY_MIN_QUALIFYING_ITEMS = 2;
 
 export function normalizeWhatsAppNumber(value = "") {
   const digits = String(value).replace(/\D+/g, "");
@@ -29,20 +30,30 @@ export function formatWhatsAppNumber(value = "") {
   return value || "";
 }
 
-export function getLoyaltyProgress(totalVisits = 0) {
-  const safeVisits = Number.isFinite(totalVisits) ? Math.max(0, totalVisits) : 0;
-  const visitsIntoCurrentReward = safeVisits % LOYALTY_REWARD_TARGET;
+export function isQualifyingLoyaltyVisit(quantity = 0) {
+  return Number(quantity) >= LOYALTY_MIN_QUALIFYING_ITEMS;
+}
+
+export function getLoyaltyProgress(totalQualifyingVisits = 0, totalVisits = totalQualifyingVisits) {
+  const safeQualifyingVisits = Number.isFinite(totalQualifyingVisits)
+    ? Math.max(0, totalQualifyingVisits)
+    : 0;
+  const safeTotalVisits = Number.isFinite(totalVisits) ? Math.max(0, totalVisits) : safeQualifyingVisits;
+  const visitsIntoCurrentReward = safeQualifyingVisits % LOYALTY_REWARD_TARGET;
   const visitsLeft =
-    visitsIntoCurrentReward === 0 && safeVisits > 0
+    visitsIntoCurrentReward === 0 && safeQualifyingVisits > 0
       ? LOYALTY_REWARD_TARGET
       : LOYALTY_REWARD_TARGET - visitsIntoCurrentReward;
 
   return {
-    totalVisits: safeVisits,
+    totalVisits: safeTotalVisits,
+    qualifyingVisits: safeQualifyingVisits,
     rewardTarget: LOYALTY_REWARD_TARGET,
-    completedRewards: Math.floor(safeVisits / LOYALTY_REWARD_TARGET),
+    minimumQualifyingItems: LOYALTY_MIN_QUALIFYING_ITEMS,
+    completedRewards: Math.floor(safeQualifyingVisits / LOYALTY_REWARD_TARGET),
     visitsIntoCurrentReward,
     visitsLeft,
+    progressPercentage: Math.round((visitsIntoCurrentReward / LOYALTY_REWARD_TARGET) * 100),
   };
 }
 
@@ -65,8 +76,9 @@ export function buildLoyaltyShareMessage({
   customerName = "",
   whatsAppNumber = "",
   totalVisits = 0,
+  qualifyingVisits = totalVisits,
 } = {}) {
-  const progress = getLoyaltyProgress(totalVisits);
+  const progress = getLoyaltyProgress(qualifyingVisits, totalVisits);
   const link = buildLoyaltyDashboardUrl(whatsAppNumber);
   const greeting = customerName ? `Hi ${customerName},` : "Hi,";
 
@@ -74,8 +86,9 @@ export function buildLoyaltyShareMessage({
     greeting,
     "",
     "Your Cleanstep loyalty visit has been recorded.",
-    `You have ${progress.totalVisits} recorded visit${progress.totalVisits === 1 ? "" : "s"}.`,
-    `You need ${progress.visitsLeft} more visit${progress.visitsLeft === 1 ? "" : "s"} to reach your next reward.`,
+    `You have ${progress.totalVisits} recorded visit${progress.totalVisits === 1 ? "" : "s"}, and ${progress.qualifyingVisits} qualifying visit${progress.qualifyingVisits === 1 ? "" : "s"} count toward your reward.`,
+    `A visit qualifies when you bring in ${progress.minimumQualifyingItems} or more shoes.`,
+    `You need ${progress.visitsLeft} more qualifying visit${progress.visitsLeft === 1 ? "" : "s"} to reach your free wash.`,
     "",
     "Use this link to register or sign in with your WhatsApp number and password:",
     link,

@@ -56,10 +56,17 @@ function LoyaltyVisitCard({ visit }) {
           </span>
         )}
       </div>
-      <div className="mt-4 grid gap-3 text-sm text-[#5c5357] sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 text-sm text-[#5c5357] sm:grid-cols-3">
         <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-3">
           <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">WhatsApp</p>
           <p className="mt-2">{visit.whatsAppNumber}</p>
+        </div>
+        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Quantity</p>
+          <p className="mt-2">{visit.quantity} item{visit.quantity === 1 ? "" : "s"}</p>
+          <p className={classNames("mt-1 text-xs font-semibold", visit.qualifies ? "text-[#1f4b8f]" : "text-[#e1251b]")}>
+            {visit.qualifies ? "Qualifies for reward" : "Does not count toward reward"}
+          </p>
         </div>
         <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-3">
           <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Notes</p>
@@ -529,10 +536,16 @@ export default function AdminPage() {
                 <div className="mt-4 rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#3f363a]">
                   <p className="font-semibold text-[#1f4b8f]">{submitState.success}</p>
                   {submitState.progress && (
-                    <p className="mt-2">
-                      Total visits: {submitState.progress.totalVisits}. Visits left until reward:{" "}
-                      {submitState.progress.visitsLeft}.
-                    </p>
+                    <>
+                      <p className="mt-2">
+                        Total visits: {submitState.progress.totalVisits}. Qualifying visits:{" "}
+                        {submitState.progress.qualifyingVisits}. Visits left until free wash:{" "}
+                        {submitState.progress.visitsLeft}.
+                      </p>
+                      <p className="mt-1 text-[#5c5357]">
+                        Only visits with 2 or more shoes count toward the 5-visit free wash reward.
+                      </p>
+                    </>
                   )}
                   {submitState.dashboardUrl && (
                     <div className="mt-3 space-y-2">

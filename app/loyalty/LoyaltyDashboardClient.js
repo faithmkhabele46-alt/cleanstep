@@ -3,9 +3,13 @@
 import Image from "next/image";
 import { useState } from "react";
 
+function classNames(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
+
 function VisitCard({ visit }) {
   return (
-    <div className="rounded-2xl border border-[#1f4b8f]/10 bg-white p-4 shadow-[0_16px_40px_rgba(31,75,143,0.08)]">
+    <div className="rounded-[26px] border border-[#1f4b8f]/10 bg-white p-5 shadow-[0_18px_45px_rgba(31,75,143,0.08)]">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-base font-semibold text-[#3f363a]">{visit.shoeType}</h3>
@@ -17,7 +21,37 @@ function VisitCard({ visit }) {
           </span>
         )}
       </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-[#1f4b8f]/10 bg-[#eef4ff] px-3 py-1 text-xs font-semibold text-[#1f4b8f]">
+          {visit.quantity} item{visit.quantity === 1 ? "" : "s"}
+        </span>
+        <span
+          className={classNames(
+            "rounded-full px-3 py-1 text-xs font-semibold",
+            visit.qualifies
+              ? "border border-[#1f4b8f]/10 bg-[#eef4ff] text-[#1f4b8f]"
+              : "border border-[#e1251b]/12 bg-[#fff3f2] text-[#e1251b]",
+          )}
+        >
+          {visit.qualifies ? "Counts toward reward" : "Need 2 or more shoes to count"}
+        </span>
+      </div>
       {visit.notes && <p className="mt-3 text-sm text-[#5c5357]">{visit.notes}</p>}
+    </div>
+  );
+}
+
+function ProgressStamp({ filled, number }) {
+  return (
+    <div
+      className={classNames(
+        "flex h-14 w-14 items-center justify-center rounded-full border text-sm font-semibold transition",
+        filled
+          ? "border-[#1f4b8f] bg-[#1f4b8f] text-white shadow-[0_12px_28px_rgba(31,75,143,0.18)]"
+          : "border-[#1f4b8f]/10 bg-white text-[#7b7276]",
+      )}
+    >
+      {number}
     </div>
   );
 }
@@ -245,8 +279,9 @@ export default function LoyaltyDashboardClient({
 
   return (
     <main className="min-h-screen bg-white px-4 py-8 text-[#3f363a]">
-      <div className="mx-auto max-w-4xl">
-        <div className="rounded-[32px] border border-[#1f4b8f]/14 bg-white p-8 shadow-[0_24px_80px_rgba(31,75,143,0.12)]">
+      <div className="mx-auto max-w-5xl">
+        <div className="overflow-hidden rounded-[36px] border border-[#1f4b8f]/14 bg-white shadow-[0_24px_80px_rgba(31,75,143,0.12)]">
+          <div className="bg-[linear-gradient(120deg,rgba(225,37,27,0.08),rgba(255,255,255,0.92)_32%,rgba(31,75,143,0.10))] px-8 py-8">
           <div className="flex flex-wrap items-center gap-4">
             <div className="overflow-hidden rounded-3xl border border-white/10 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.12)]">
               <Image
@@ -259,13 +294,16 @@ export default function LoyaltyDashboardClient({
             </div>
             <div>
               <p className="text-xs uppercase tracking-[0.28em] text-[#1f4b8f]">Cleanstep loyalty</p>
-              <h1 className="mt-2 text-3xl font-semibold">See your loyalty visits</h1>
+              <h1 className="mt-2 text-4xl font-semibold tracking-tight">Your reward journey starts here</h1>
               <p className="mt-2 max-w-2xl text-sm text-[#5c5357]">
                 Admin logs your shoe drop-off first. After that, you register or sign in with your
                 WhatsApp number and password to see your visit history and reward progress.
               </p>
             </div>
           </div>
+          </div>
+
+          <div className="p-8">
 
           {mode !== "dashboard" && (
             <div className="mt-8 rounded-3xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-5">
@@ -376,26 +414,73 @@ export default function LoyaltyDashboardClient({
 
           {mode === "dashboard" && state.customer && state.progress && (
             <>
-              <div className="mt-8 grid gap-4 md:grid-cols-3">
-                <div className="rounded-3xl border border-[#1f4b8f]/10 bg-[#f9fafc] p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Customer</p>
-                  <p className="mt-3 text-lg font-semibold">{state.customer.customerName}</p>
-                  <p className="mt-1 text-sm text-[#5c5357]">{state.customer.whatsAppNumber}</p>
+              <div className="mt-8 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-[30px] border border-[#1f4b8f]/10 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_52%,#eef4ff_100%)] p-6 shadow-[0_18px_45px_rgba(31,75,143,0.08)]">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Loyalty progress</p>
+                  <h2 className="mt-3 text-3xl font-semibold text-[#3f363a]">
+                    {state.progress.visitsLeft === 0
+                      ? "You unlocked your free wash"
+                      : `${state.progress.visitsLeft} more qualifying visit${state.progress.visitsLeft === 1 ? "" : "s"} to go`}
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm text-[#5c5357]">
+                    Bring in {state.progress.minimumQualifyingItems} or more shoes in one drop-off for the visit to count. Your free wash unlocks after {state.progress.rewardTarget} qualifying visits.
+                  </p>
+
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    {Array.from({ length: state.progress.rewardTarget }).map((_, index) => (
+                      <ProgressStamp
+                        key={`stamp-${index + 1}`}
+                        number={index + 1}
+                        filled={index < state.progress.visitsIntoCurrentReward}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="mt-6 h-3 overflow-hidden rounded-full bg-white shadow-inner">
+                    <div
+                      className="h-full rounded-full bg-[linear-gradient(90deg,#e1251b,#1f4b8f)] transition-all"
+                      style={{ width: `${Math.max(8, state.progress.progressPercentage || 0)}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-6 grid gap-4 md:grid-cols-3">
+                    <div className="rounded-3xl border border-[#1f4b8f]/10 bg-white p-5">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Customer</p>
+                      <p className="mt-3 text-lg font-semibold">{state.customer.customerName}</p>
+                      <p className="mt-1 text-sm text-[#5c5357]">{state.customer.whatsAppNumber}</p>
+                    </div>
+                    <div className="rounded-3xl border border-[#1f4b8f]/10 bg-white p-5">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">All visits</p>
+                      <p className="mt-3 text-3xl font-semibold text-[#1f4b8f]">
+                        {state.progress.totalVisits}
+                      </p>
+                    </div>
+                    <div className="rounded-3xl border border-[#e1251b]/14 bg-[#fff3f2] p-5">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Qualifying visits</p>
+                      <p className="mt-3 text-3xl font-semibold text-[#e1251b]">
+                        {state.progress.qualifyingVisits}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-3xl border border-[#1f4b8f]/10 bg-[#eef4ff] p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Total visits</p>
-                  <p className="mt-3 text-3xl font-semibold text-[#1f4b8f]">
-                    {state.progress.totalVisits}
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-[#e1251b]/14 bg-[#fff3f2] p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Visits left</p>
-                  <p className="mt-3 text-3xl font-semibold text-[#e1251b]">
-                    {state.progress.visitsLeft}
-                  </p>
-                  <p className="mt-1 text-sm text-[#7c4642]">
-                    Until reward number {state.progress.completedRewards + 1}
-                  </p>
+
+                <div className="rounded-[30px] border border-[#1f4b8f]/10 bg-white p-6 shadow-[0_18px_45px_rgba(31,75,143,0.08)]">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Reward rules</p>
+                  <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">How the free wash works</h2>
+                  <div className="mt-5 space-y-3">
+                    <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+                      <p className="font-semibold text-[#1f4b8f]">1. Bring 2 or more shoes</p>
+                      <p className="mt-1 text-sm text-[#5c5357]">A visit only counts when at least 2 shoes are logged in together.</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+                      <p className="font-semibold text-[#1f4b8f]">2. Reach 5 qualifying visits</p>
+                      <p className="mt-1 text-sm text-[#5c5357]">After 5 qualifying drop-offs, you earn your free wash reward.</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#e1251b]/12 bg-[#fff3f2] p-4">
+                      <p className="font-semibold text-[#e1251b]">3. Watch your dashboard grow</p>
+                      <p className="mt-1 text-sm text-[#7c4642]">Use this page anytime to track which visits counted and how close you are.</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -403,6 +488,9 @@ export default function LoyaltyDashboardClient({
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Visit history</p>
                   <h2 className="mt-2 text-2xl font-semibold">Every recorded Cleanstep drop-off</h2>
+                  <p className="mt-1 text-sm text-[#5c5357]">
+                    Each visit shows whether it counted toward your reward.
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -422,6 +510,7 @@ export default function LoyaltyDashboardClient({
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
     </main>

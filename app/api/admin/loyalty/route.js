@@ -5,6 +5,7 @@ import {
   buildLoyaltyShareMessage,
   formatWhatsAppNumber,
   getLoyaltyProgress,
+  isQualifyingLoyaltyVisit,
   normalizeWhatsAppNumber,
 } from "../../../lib/loyalty";
 
@@ -12,7 +13,7 @@ async function loadRecentVisits(supabase) {
   const { data, error } = await supabase
     .from("loyalty_visits")
     .select(
-      "id, visit_date, shoe_type, receipt_number, notes, created_at, loyalty_customers(id, customer_name, whatsapp_number)",
+      "id, visit_date, shoe_type, receipt_number, notes, quantity, created_at, loyalty_customers(id, customer_name, whatsapp_number)",
     )
     .order("visit_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -28,6 +29,8 @@ async function loadRecentVisits(supabase) {
     shoeType: visit.shoe_type,
     receiptNumber: visit.receipt_number,
     notes: visit.notes,
+    quantity: visit.quantity || 1,
+    qualifies: isQualifyingLoyaltyVisit(visit.quantity || 1),
     createdAt: visit.created_at,
     customerId: visit.loyalty_customers?.id || "",
     customerName: visit.loyalty_customers?.customer_name || "Unknown customer",
@@ -86,6 +89,7 @@ export async function POST(request) {
     const customerName = body.customerName?.trim();
     const whatsAppNumber = normalizeWhatsAppNumber(body.whatsAppNumber);
     const shoeType = body.shoeType?.trim();
+    const quantity = Math.max(1, Number(body.quantity) || 1);
     const visitDate = body.visitDate;
     const receiptNumber = body.receiptNumber?.trim() || null;
     const notes = body.notes?.trim() || null;
@@ -146,11 +150,12 @@ export async function POST(request) {
       .insert({
         customer_id: customerId,
         shoe_type: shoeType,
+        quantity,
         visit_date: visitDate,
         receipt_number: receiptNumber,
         notes,
       })
-      .select("id, visit_date, shoe_type, receipt_number, notes, created_at")
+      .select("id, visit_date, shoe_type, receipt_number, notes, quantity, created_at")
       .single();
 
     if (insertVisitError) {
@@ -166,12 +171,25 @@ export async function POST(request) {
       throw countError;
     }
 
-    const progress = getLoyaltyProgress(count || 0);
+    const { data: allVisits, error: visitsError } = await supabase
+      .from("loyalty_visits")
+      .select("quantity")
+      .eq("customer_id", customerId);
+
+    if (visitsError) {
+      throw visitsError;
+    }
+
+    const qualifyingVisits = (allVisits || []).filter((visit) =>
+      isQualifyingLoyaltyVisit(visit.quantity || 1),
+    ).length;
+    const progress = getLoyaltyProgress(qualifyingVisits, count || 0);
     const dashboardUrl = buildLoyaltyDashboardUrl(whatsAppNumber);
     const shareMessage = buildLoyaltyShareMessage({
       customerName,
       whatsAppNumber,
       totalVisits: progress.totalVisits,
+      qualifyingVisits: progress.qualifyingVisits,
     });
 
     return NextResponse.json({
@@ -183,6 +201,7 @@ export async function POST(request) {
         shoeType: savedVisit.shoe_type,
         receiptNumber: savedVisit.receipt_number,
         notes: savedVisit.notes,
+        quantity: savedVisit.quantity || 1,
         createdAt: savedVisit.created_at,
       },
       customer: {
