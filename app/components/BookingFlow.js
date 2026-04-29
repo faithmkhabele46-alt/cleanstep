@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PlaceAutocompleteInput from "./PlaceAutocompleteInput";
@@ -19,6 +20,15 @@ import {
   getVisibleSteps,
   isCarpetCallout,
 } from "../lib/booking";
+import {
+  buildBasketContactCopy,
+  calculateBasketPricing,
+  clearStoredBookingBasket,
+  createBasketEntry,
+  getBasketPrimaryLabel,
+  getStoredBookingBasket,
+  saveStoredBookingBasket,
+} from "../lib/booking-basket";
 
 function buildNumberSelection(step, value) {
   return {
@@ -101,6 +111,8 @@ export default function BookingFlow({ service }) {
   const [numberDrafts, setNumberDrafts] = useState({});
   const [inputDrafts, setInputDrafts] = useState({});
   const [showFootwearContactOptions, setShowFootwearContactOptions] = useState(false);
+  const [basket, setBasket] = useState(() => getStoredBookingBasket());
+  const [itemAddedMessage, setItemAddedMessage] = useState("");
 
   const visibleSteps = getVisibleSteps(steps, selections);
   const safeStepIndex =
@@ -122,8 +134,10 @@ export default function BookingFlow({ service }) {
   const stepOptions = getStepOptions(currentStep, selections);
   const currentSelection = selections.find((selection) => selection.key === currentStep.key);
   const pricing = calculateBookingPricing(serviceId, selections);
+  const basketPricing = calculateBasketPricing(basket);
   const checkoutMode = getServiceCheckoutMode(serviceId);
   const enquiry = buildEnquiryCopy(serviceId, selections);
+  const basketEnquiry = buildBasketContactCopy(basket);
   const isLooseCarpetDropOff = serviceId === "carpets" && !isCarpetCallout(selections);
   const isConfirmFlow = serviceId === "carpets" || serviceId === "upholstery";
   const contactEmailUrl = buildContactEmailUrl({
@@ -134,8 +148,10 @@ export default function BookingFlow({ service }) {
     enquiry.body.replace(/\n+/g, " ").replace(/\s+/g, " ").trim(),
   );
   const canContinueToSummary =
-    safeStepIndex === visibleSteps.length - 1 && Boolean(currentSelection);
+    basket.length > 0;
   const hasCalculatedPrice = pricing.lineItems.length > 0 || pricing.total > 0;
+  const hasCompletedCurrentItem =
+    safeStepIndex === visibleSteps.length - 1 && Boolean(currentSelection);
   const numberValue =
     numberDrafts[currentStep.key] ??
     currentSelection?.value ??
@@ -154,17 +170,13 @@ export default function BookingFlow({ service }) {
     const updatedSelections = [...preservedSelections, item];
     setSelections(updatedSelections);
     setShowFootwearContactOptions(false);
+    setItemAddedMessage("");
 
     const nextVisibleSteps = getVisibleSteps(steps, updatedSelections);
 
     if (safeStepIndex < nextVisibleSteps.length - 1) {
       setStepIndex(safeStepIndex + 1);
       return;
-    }
-
-    if (serviceId === "footwear") {
-      const query = encodeBookingSelections(updatedSelections);
-      router.push(`/summary?data=${query}&service=${serviceId}`);
     }
   };
 
@@ -215,6 +227,39 @@ export default function BookingFlow({ service }) {
     setShowFootwearContactOptions(false);
   };
 
+  const resetCurrentItem = () => {
+    setStepIndex(0);
+    setSelections([]);
+    setNumberDrafts({});
+    setInputDrafts({});
+    setShowFootwearContactOptions(false);
+  };
+
+  const handleConfirmItem = () => {
+    if (!hasCompletedCurrentItem) {
+      return;
+    }
+
+    const entry = createBasketEntry(serviceId, selections);
+    const nextBasket = [...basket, entry];
+    setBasket(nextBasket);
+    saveStoredBookingBasket(nextBasket);
+    setItemAddedMessage(`${getBasketPrimaryLabel(entry)} added. You can now add another item.`);
+    resetCurrentItem();
+  };
+
+  const handleRemoveBasketItem = (entryId) => {
+    const nextBasket = basket.filter((entry) => entry.id !== entryId);
+    setBasket(nextBasket);
+    saveStoredBookingBasket(nextBasket);
+  };
+
+  const handleClearBasket = () => {
+    setBasket([]);
+    clearStoredBookingBasket();
+    setItemAddedMessage("");
+  };
+
   return (
     <div className="min-h-screen bg-white px-4 py-8 text-[#3f363a]">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md items-center justify-center">
@@ -250,6 +295,11 @@ export default function BookingFlow({ service }) {
           </div>
 
           <div className="px-6 py-6">
+            {itemAddedMessage && (
+              <div className="mb-6 rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
+                {itemAddedMessage}
+              </div>
+            )}
             {currentStep.kind === "number" ? (
               <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
                 <p className="text-sm text-[#5c5357]">
@@ -412,7 +462,7 @@ export default function BookingFlow({ service }) {
 
             {selections.length > 0 && (
               <div className="mt-6 rounded-2xl border border-[#1f4b8f]/10 bg-[#f9fafc] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Current booking</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Current item</p>
                 <div className="mt-3 space-y-2 text-sm text-[#4a4145]">
                   {selections.map((selection) => (
                     <div key={selection.key} className="flex items-center justify-between gap-3">
@@ -472,7 +522,7 @@ export default function BookingFlow({ service }) {
                   </div>
                 )}
 
-                {(serviceId === "footwear" || isLooseCarpetDropOff) && hasCalculatedPrice && (
+                {(serviceId === "footwear" || isLooseCarpetDropOff) && hasCalculatedPrice && basket.length === 0 && (
                   <div className="mt-4 grid gap-3">
                     <button
                       onClick={() => setShowFootwearContactOptions((current) => !current)}
@@ -512,6 +562,86 @@ export default function BookingFlow({ service }) {
               </div>
             )}
 
+            {hasCompletedCurrentItem && (
+              <button
+                onClick={handleConfirmItem}
+                className="mt-6 w-full rounded-2xl bg-[#e1251b] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#c41f16]"
+              >
+                Confirm Item
+              </button>
+            )}
+
+            {basket.length > 0 && (
+              <div className="mt-6 rounded-2xl border border-[#1f4b8f]/10 bg-[#f9fafc] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Booking basket</p>
+                  <button
+                    onClick={handleClearBasket}
+                    className="text-xs font-semibold uppercase tracking-[0.18em] text-[#e1251b]"
+                  >
+                    Clear basket
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {basket.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-2xl border border-[#1f4b8f]/10 bg-white p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">
+                            {entry.serviceTitle}
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-[#3f363a]">
+                            {getBasketPrimaryLabel(entry)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveBasketItem(entry.id)}
+                          className="text-xs font-semibold uppercase tracking-[0.18em] text-[#e1251b]"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <p className="mt-2 text-sm text-[#1f4b8f]">
+                        {formatCurrency(entry.pricing?.total || 0)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-[#1f4b8f]/18 bg-[#eef4ff] p-4">
+                  <div className="flex items-center justify-between text-sm text-[#5c5357]">
+                    <span>Basket total</span>
+                    <span className="text-lg font-semibold text-[#1f4b8f]">
+                      {formatCurrency(basketPricing.total)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  <Link
+                    href="/"
+                    className="rounded-2xl border border-[#1f4b8f]/12 px-4 py-4 text-center text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+                  >
+                    Add Another Service
+                  </Link>
+                  {(serviceId === "footwear" || isLooseCarpetDropOff) && basketEnquiry.allDropOffItems && (
+                    <a
+                      href={cleanstepContact.mapsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] px-4 py-4 text-center text-sm font-semibold text-[#e1251b] transition hover:bg-[#ffe6e3]"
+                    >
+                      Locate Store
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
             {canContinueToSummary && (
               <button
                 onClick={() => {
@@ -520,7 +650,7 @@ export default function BookingFlow({ service }) {
                 }}
                 className="mt-6 w-full rounded-2xl bg-[#1f4b8f] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#173a70]"
               >
-                View Summary
+                View Combined Summary
               </button>
             )}
 
