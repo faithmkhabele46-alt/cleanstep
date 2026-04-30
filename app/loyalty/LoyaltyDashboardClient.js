@@ -7,6 +7,33 @@ function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
+function PasswordField({
+  value,
+  onChange,
+  placeholder,
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative mt-4">
+      <input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 pr-16 text-base text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#1f4b8f]"
+      >
+        {visible ? "Hide" : "Show"}
+      </button>
+    </div>
+  );
+}
+
 function VisitCard({ visit }) {
   return (
     <div className="rounded-[26px] border border-[#1f4b8f]/10 bg-white p-5 shadow-[0_18px_45px_rgba(31,75,143,0.08)]">
@@ -340,19 +367,15 @@ export default function LoyaltyDashboardClient({
                     readOnly
                     className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none"
                   />
-                  <input
-                    type="password"
+                  <PasswordField
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Create password"
-                    className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
                   />
-                  <input
-                    type="password"
+                  <PasswordField
                     value={confirmPassword}
                     onChange={(event) => setConfirmPassword(event.target.value)}
                     placeholder="Confirm password"
-                    className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
                   />
                   <button
                     type="submit"
@@ -375,12 +398,10 @@ export default function LoyaltyDashboardClient({
                     readOnly
                     className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none"
                   />
-                  <input
-                    type="password"
+                  <PasswordField
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Password"
-                    className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
                   />
                   <button
                     type="submit"

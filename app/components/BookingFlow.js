@@ -162,14 +162,11 @@ export default function BookingFlow({ service }) {
   const dateBounds = currentStep.inputType === "date" ? getCurrentYearDateBounds() : null;
   const dateDraft =
     dateDrafts[currentStep.key] ?? getDatePartsFromValue(currentSelection?.value);
-  const dateValue = buildCurrentYearDateValue(
-    dateDraft.day || "dd",
-    dateDraft.month || "mm",
-  );
-  const dateIsComplete =
-    currentStep.inputType === "date" &&
-    dateDraft.day.length === 2 &&
-    dateDraft.month.length === 2;
+  const displayDay = dateDraft.day || "dd";
+  const displayMonth = dateDraft.month || "mm";
+  const dateValue = buildCurrentYearDateValue(displayDay, displayMonth);
+  const dateCanContinue =
+    currentStep.inputType === "date" && isValidCurrentYearDate(dateValue);
 
   const commitSelection = (item) => {
     const preservedSelections = selections.filter(
@@ -443,11 +440,9 @@ export default function BookingFlow({ service }) {
                 <button
                   onClick={handleInputContinue}
                   disabled={
-                    (currentStep.inputType === "date"
-                      ? !dateIsComplete || !isValidCurrentYearDate(dateValue)
-                      : !String(inputValue || "").trim()) ||
-                    (currentStep.inputType === "date" &&
-                      !isValidCurrentYearDate(dateValue))
+                    currentStep.inputType === "date"
+                      ? !dateCanContinue
+                      : !String(inputValue || "").trim()
                   }
                   className="mt-5 w-full rounded-2xl bg-[#1f4b8f] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#173a70] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#8c8488]"
                 >

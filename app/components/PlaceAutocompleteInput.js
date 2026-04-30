@@ -49,12 +49,15 @@ export default function PlaceAutocompleteInput({
   className,
 }) {
   const inputRef = useRef(null);
-  const autocompleteRef = useRef(null);
+  const autocompleteServiceRef = useRef(null);
+  const blurTimeoutRef = useRef(null);
   const [loadState, setLoadState] = useState("idle");
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   useEffect(() => {
-    if (!apiKey || !inputRef.current || autocompleteRef.current) {
+    if (!apiKey || autocompleteServiceRef.current) {
       return;
     }
 
@@ -62,23 +65,11 @@ export default function PlaceAutocompleteInput({
 
     loadGoogleMapsPlaces(apiKey)
       .then((google) => {
-        if (!active || !inputRef.current || autocompleteRef.current) {
+        if (!active || !inputRef.current || autocompleteServiceRef.current) {
           return;
         }
 
-        autocompleteRef.current = new google.maps.places.Autocomplete(inputRef.current, {
-          fields: ["formatted_address", "name"],
-          componentRestrictions: { country: "za" },
-          bounds: southAfricaBounds,
-          strictBounds: false,
-          types: ["geocode"],
-        });
-
-        autocompleteRef.current.addListener("place_changed", () => {
-          const place = autocompleteRef.current?.getPlace();
-          const nextValue = place?.formatted_address || place?.name || inputRef.current?.value || "";
-          onChange(nextValue);
-        });
+        autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
 
         setLoadState("ready");
       })
@@ -91,7 +82,43 @@ export default function PlaceAutocompleteInput({
     return () => {
       active = false;
     };
-  }, [apiKey, onChange]);
+  }, [apiKey]);
+
+  useEffect(() => {
+    if (loadState !== "ready" || !autocompleteServiceRef.current) {
+      return;
+    }
+
+    const trimmedValue = String(value || "").trim();
+
+    if (trimmedValue.length < 1) {
+      return;
+    }
+
+    autocompleteServiceRef.current.getPlacePredictions(
+      {
+        input: trimmedValue,
+        componentRestrictions: { country: "za" },
+        bounds: southAfricaBounds,
+        types: ["geocode"],
+      },
+      (predictions, status) => {
+        if (status !== window.google?.maps?.places?.PlacesServiceStatus?.OK || !predictions) {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
+        }
+
+        setSuggestions(
+          predictions.slice(0, 5).map((prediction) => ({
+            id: prediction.place_id,
+            description: prediction.description,
+          })),
+        );
+        setShowSuggestions(true);
+      },
+    );
+  }, [loadState, value]);
 
   const helperText = useMemo(() => {
     if (!apiKey) {
@@ -103,11 +130,13 @@ export default function PlaceAutocompleteInput({
     }
 
     if (loadState === "ready") {
-      return "Start typing and choose the matching address suggestion.";
+      return suggestions.length > 0
+        ? "Tap one of the matching address suggestions below."
+        : "Keep typing and the matching address suggestions will appear below.";
     }
 
     return "Loading Google Maps suggestions...";
-  }, [apiKey, loadState]);
+  }, [apiKey, loadState, suggestions.length]);
 
   return (
     <div className="relative">
@@ -115,11 +144,51 @@ export default function PlaceAutocompleteInput({
         ref={inputRef}
         type="text"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          onChange(nextValue);
+
+          if (!String(nextValue || "").trim()) {
+            setSuggestions([]);
+            setShowSuggestions(false);
+          }
+        }}
+        onFocus={() => {
+          if (blurTimeoutRef.current) {
+            clearTimeout(blurTimeoutRef.current);
+          }
+
+          if (suggestions.length > 0) {
+            setShowSuggestions(true);
+          }
+        }}
+        onBlur={() => {
+          blurTimeoutRef.current = window.setTimeout(() => {
+            setShowSuggestions(false);
+          }, 150);
+        }}
         placeholder={placeholder}
         autoComplete="off"
         className={className}
       />
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="mt-3 overflow-hidden rounded-2xl border border-[#1f4b8f]/12 bg-white shadow-[0_20px_50px_rgba(31,75,143,0.16)]">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.id}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(suggestion.description);
+                setSuggestions([]);
+              }}
+              className="block w-full border-t border-[#1f4b8f]/8 px-4 py-3 text-left text-sm text-[#3f363a] first:border-t-0 hover:bg-[#eef4ff]"
+            >
+              {suggestion.description}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="mt-3 text-sm text-[#7b7276]">{helperText}</p>
     </div>
   );
