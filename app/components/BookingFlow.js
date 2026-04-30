@@ -64,8 +64,8 @@ function isValidCurrentYearDate(value) {
     return false;
   }
 
-  const month = Number(match[1]);
-  const day = Number(match[2]);
+  const day = Number(match[1]);
+  const month = Number(match[2]);
   const year = Number(match[3]);
   const currentYear = new Date().getFullYear();
 
@@ -84,23 +84,24 @@ function isValidCurrentYearDate(value) {
 
 function formatCurrentYearDateInput(rawValue) {
   const currentYear = new Date().getFullYear();
-  const digitsOnly = String(rawValue || "").replace(/\D/g, "").slice(0, 4);
-  const month = digitsOnly.slice(0, 2);
-  const day = digitsOnly.slice(2, 4);
+  const currentValue = String(rawValue || "");
+  const digitsOnly = currentValue.replace(/\D/g, "").slice(0, 4);
+  const day = digitsOnly.slice(0, 2);
+  const month = digitsOnly.slice(2, 4);
+  const paddedDay = `${day}${"d".repeat(Math.max(0, 2 - day.length))}`;
+  const paddedMonth = `${month}${"m".repeat(Math.max(0, 2 - month.length))}`;
 
-  if (!month) {
-    return "";
+  return `${paddedDay}/${paddedMonth}/${currentYear}`;
+}
+
+function normalizeDateDisplayValue(value) {
+  const trimmed = String(value || "").trim();
+
+  if (!trimmed) {
+    return formatCurrentYearDateInput("");
   }
 
-  if (digitsOnly.length <= 2) {
-    return month;
-  }
-
-  if (digitsOnly.length < 4) {
-    return `${month}/${day}`;
-  }
-
-  return `${month}/${day}/${currentYear}`;
+  return isValidCurrentYearDate(trimmed) ? trimmed : formatCurrentYearDateInput(trimmed);
 }
 
 export default function BookingFlow({ service }) {
@@ -158,8 +159,14 @@ export default function BookingFlow({ service }) {
     currentStep.defaultValue ??
     currentStep.min ??
     1;
+  const rawInputValue =
+    inputDrafts[currentStep.key] ??
+    currentSelection?.value ??
+    (currentStep.inputType === "date" ? formatCurrentYearDateInput("") : "");
   const inputValue =
-    inputDrafts[currentStep.key] ?? currentSelection?.value ?? "";
+    currentStep.inputType === "date"
+      ? normalizeDateDisplayValue(rawInputValue)
+      : rawInputValue;
   const dateBounds = currentStep.inputType === "date" ? getCurrentYearDateBounds() : null;
 
   const commitSelection = (item) => {
@@ -368,6 +375,16 @@ export default function BookingFlow({ service }) {
                   value={inputValue}
                   min={dateBounds?.min}
                   max={dateBounds?.max}
+                  onFocus={() => {
+                    if (currentStep.inputType !== "date") {
+                      return;
+                    }
+
+                    setInputDrafts((current) => ({
+                      ...current,
+                      [currentStep.key]: normalizeDateDisplayValue(current[currentStep.key]),
+                    }));
+                  }}
                   onChange={(event) =>
                     setInputDrafts((current) => ({
                       ...current,
@@ -379,7 +396,7 @@ export default function BookingFlow({ service }) {
                   }
                   placeholder={
                     currentStep.inputType === "date"
-                      ? `mm/dd/${new Date().getFullYear()}`
+                      ? `dd/mm/${new Date().getFullYear()}`
                       : currentStep.placeholder
                   }
                   className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none placeholder:text-[#9b9397]"
@@ -387,7 +404,7 @@ export default function BookingFlow({ service }) {
 
                 {currentStep.inputType === "date" && dateBounds && (
                   <p className="mt-3 text-sm text-[#7b7276]">
-                    Enter a real date within {new Date().getFullYear()} only.
+                    Enter a real date within {new Date().getFullYear()} only in dd/mm/{new Date().getFullYear()} format.
                   </p>
                 )}
 

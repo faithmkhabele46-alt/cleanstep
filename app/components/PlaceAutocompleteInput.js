@@ -110,7 +110,7 @@ export default function PlaceAutocompleteInput({
   }, [apiKey, loadState]);
 
   return (
-    <div>
+    <div className="relative">
       <input
         ref={inputRef}
         type="text"
