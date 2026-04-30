@@ -39,6 +39,20 @@ async function loadRecentVisits(supabase) {
   }));
 }
 
+async function loadCustomerById(supabase, customerId) {
+  const { data, error } = await supabase
+    .from("loyalty_customers")
+    .select("id, customer_name, whatsapp_number")
+    .eq("id", customerId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
 export async function GET() {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json(
@@ -241,6 +255,112 @@ export async function POST(request) {
       {
         saved: false,
         message: error.message || "Unable to save loyalty visit.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PUT(request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const supabase = createServerSupabaseClient();
+
+  if (!supabase) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message:
+          "Supabase loyalty access is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to update customers.",
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const customerId = body.customerId?.trim();
+    const customerName = body.customerName?.trim();
+    const whatsAppNumber = normalizeWhatsAppNumber(body.whatsAppNumber);
+
+    if (!customerId || !customerName || !whatsAppNumber) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "Customer, name, and WhatsApp number are required.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const existingCustomer = await loadCustomerById(supabase, customerId);
+
+    if (!existingCustomer) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "That loyalty customer could not be found anymore.",
+        },
+        { status: 404 },
+      );
+    }
+
+    const { data: duplicateCustomer, error: duplicateError } = await supabase
+      .from("loyalty_customers")
+      .select("id")
+      .eq("whatsapp_number", whatsAppNumber)
+      .neq("id", customerId)
+      .maybeSingle();
+
+    if (duplicateError) {
+      throw duplicateError;
+    }
+
+    if (duplicateCustomer) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "That WhatsApp number already belongs to another loyalty customer.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const { error: updateError } = await supabase
+      .from("loyalty_customers")
+      .update({
+        customer_name: customerName,
+        whatsapp_number: whatsAppNumber,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", customerId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return NextResponse.json({
+      saved: true,
+      message: "Customer details updated successfully.",
+      customer: {
+        id: customerId,
+        customerName,
+        whatsAppNumber: formatWhatsAppNumber(whatsAppNumber),
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: error.message || "Unable to update customer details.",
       },
       { status: 500 },
     );

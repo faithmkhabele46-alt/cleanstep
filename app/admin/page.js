@@ -123,6 +123,8 @@ function BookingCard({ booking }) {
 }
 
 export default function AdminPage() {
+  const [loyaltySearch, setLoyaltySearch] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [authState, setAuthState] = useState({
     loading: true,
     configured: false,
@@ -165,6 +167,11 @@ export default function AdminPage() {
     dashboardUrl: "",
     shareMessage: "",
     progress: null,
+  });
+  const [customerUpdateState, setCustomerUpdateState] = useState({
+    loading: false,
+    error: "",
+    success: "",
   });
 
   useEffect(() => {
@@ -259,6 +266,11 @@ export default function AdminPage() {
       ...current,
       [key]: value,
     }));
+    setCustomerUpdateState({
+      loading: false,
+      error: "",
+      success: "",
+    });
   }
 
   function selectLoyaltyCategory(value) {
@@ -425,6 +437,11 @@ export default function AdminPage() {
         shareMessage: data.shareMessage,
         progress: data.progress,
       });
+      setCustomerUpdateState({
+        loading: false,
+        error: "",
+        success: "",
+      });
       setLoyaltyForm((current) => ({
         ...current,
         visitCategory: "",
@@ -454,10 +471,87 @@ export default function AdminPage() {
     }
   }
 
+  async function handleCustomerUpdate() {
+    if (!selectedCustomerId) {
+      return;
+    }
+
+    setCustomerUpdateState({
+      loading: true,
+      error: "",
+      success: "",
+    });
+
+    try {
+      const response = await fetch("/api/admin/loyalty", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: selectedCustomerId,
+          customerName: loyaltyForm.customerName,
+          whatsAppNumber: loyaltyForm.whatsAppNumber,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.saved) {
+        throw new Error(data.message || "Unable to update customer details.");
+      }
+
+      setCustomerUpdateState({
+        loading: false,
+        error: "",
+        success: data.message,
+      });
+
+      const loyaltyResponse = await fetch("/api/admin/loyalty", { cache: "no-store" });
+      const loyaltyData = await loyaltyResponse.json();
+      setLoyaltyState({
+        loading: false,
+        configured: loyaltyData.configured,
+        message: loyaltyData.message,
+        items: loyaltyData.items || [],
+      });
+    } catch (error) {
+      setCustomerUpdateState({
+        loading: false,
+        error: error.message || "Unable to update customer details.",
+        success: "",
+      });
+    }
+  }
+
   const filteredVariantOptions = loyaltyVariantOptions.filter(
     (item) => item.category === loyaltyForm.visitCategory,
   );
   const visitSummaryLabel = getLoyaltyVisitLabel(loyaltyForm);
+  const uniqueCustomers = loyaltyState.items.reduce((customers, visit) => {
+    if (!visit.customerId || customers.some((customer) => customer.customerId === visit.customerId)) {
+      return customers;
+    }
+
+    customers.push({
+      customerId: visit.customerId,
+      customerName: visit.customerName,
+      whatsAppNumber: visit.whatsAppNumber,
+      latestShoeType: visit.shoeType,
+      latestVisitDate: visit.visitDate,
+    });
+
+    return customers;
+  }, []);
+  const filteredCustomers = uniqueCustomers.filter((customer) => {
+    const query = loyaltySearch.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    return (
+      customer.customerName.toLowerCase().includes(query) ||
+      customer.whatsAppNumber.toLowerCase().includes(query)
+    );
+  });
 
   if (authState.loading) {
     return (
@@ -567,6 +661,60 @@ export default function AdminPage() {
               <p className="mt-2 text-sm text-[#5c5357]">
                 Add the customer visit here first. Once it is saved, the customer dashboard updates automatically.
               </p>
+
+              <div className="mt-6 rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-4">
+                <label className="text-sm font-semibold text-[#3f363a]" htmlFor="loyaltySearch">
+                  Search existing loyalty customer
+                </label>
+                <input
+                  id="loyaltySearch"
+                  value={loyaltySearch}
+                  onChange={(event) => setLoyaltySearch(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                  placeholder="Search by name or WhatsApp number"
+                />
+                {filteredCustomers.length > 0 ? (
+                  <div className="mt-3 grid gap-3">
+                    {filteredCustomers.slice(0, 6).map((customer) => (
+                      <button
+                        key={customer.customerId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomerId(customer.customerId);
+                          setLoyaltyForm((current) => ({
+                            ...current,
+                            customerName: customer.customerName,
+                            whatsAppNumber: customer.whatsAppNumber,
+                          }));
+                          setCustomerUpdateState({
+                            loading: false,
+                            error: "",
+                            success: "",
+                          });
+                        }}
+                        className={classNames(
+                          "rounded-2xl border px-4 py-4 text-left transition",
+                          selectedCustomerId === customer.customerId
+                            ? "border-[#1f4b8f] bg-[#eef4ff]"
+                            : "border-[#1f4b8f]/12 bg-white hover:bg-[#f8fbff]",
+                        )}
+                      >
+                        <p className="text-sm font-semibold text-[#3f363a]">{customer.customerName}</p>
+                        <p className="mt-1 text-sm text-[#5c5357]">{customer.whatsAppNumber}</p>
+                        <p className="mt-1 text-xs text-[#7b7276]">
+                          Last visit: {customer.latestVisitDate} • {customer.latestShoeType}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-[#7b7276]">
+                    {loyaltySearch.trim()
+                      ? "No matching loyalty customer found yet."
+                      : "Start typing a name or WhatsApp number to load an existing customer."}
+                  </p>
+                )}
+              </div>
 
               <form onSubmit={handleLoyaltySubmit} className="mt-6 space-y-4">
                 <div>
@@ -723,11 +871,31 @@ export default function AdminPage() {
                 >
                   {submitState.loading ? "Saving loyalty visit..." : "Save loyalty visit"}
                 </button>
+                <button
+                  type="button"
+                  onClick={handleCustomerUpdate}
+                  disabled={customerUpdateState.loading || !selectedCustomerId}
+                  className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fa] disabled:text-[#9aa2b4]"
+                >
+                  {customerUpdateState.loading ? "Saving customer changes..." : "Update selected customer"}
+                </button>
               </form>
 
               {submitState.error && (
                 <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
                   {submitState.error}
+                </div>
+              )}
+
+              {customerUpdateState.error && (
+                <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+                  {customerUpdateState.error}
+                </div>
+              )}
+
+              {customerUpdateState.success && (
+                <div className="mt-4 rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
+                  {customerUpdateState.success}
                 </div>
               )}
 

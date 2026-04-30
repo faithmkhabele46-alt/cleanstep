@@ -166,6 +166,10 @@ export default function BookingFlow({ service }) {
     dateDraft.day || "dd",
     dateDraft.month || "mm",
   );
+  const dateIsComplete =
+    currentStep.inputType === "date" &&
+    dateDraft.day.length === 2 &&
+    dateDraft.month.length === 2;
 
   const commitSelection = (item) => {
     const preservedSelections = selections.filter(
@@ -439,9 +443,11 @@ export default function BookingFlow({ service }) {
                 <button
                   onClick={handleInputContinue}
                   disabled={
-                    !String(inputValue || "").trim() ||
+                    (currentStep.inputType === "date"
+                      ? !dateIsComplete || !isValidCurrentYearDate(dateValue)
+                      : !String(inputValue || "").trim()) ||
                     (currentStep.inputType === "date" &&
-                      !isValidCurrentYearDate(String(inputValue || "").trim()))
+                      !isValidCurrentYearDate(dateValue))
                   }
                   className="mt-5 w-full rounded-2xl bg-[#1f4b8f] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#173a70] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#8c8488]"
                 >
