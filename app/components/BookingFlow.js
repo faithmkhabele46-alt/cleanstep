@@ -82,26 +82,23 @@ function isValidCurrentYearDate(value) {
   );
 }
 
-function formatCurrentYearDateInput(rawValue) {
+function buildCurrentYearDateValue(day, month) {
   const currentYear = new Date().getFullYear();
-  const currentValue = String(rawValue || "");
-  const digitsOnly = currentValue.replace(/\D/g, "").slice(0, 4);
-  const day = digitsOnly.slice(0, 2);
-  const month = digitsOnly.slice(2, 4);
-  const paddedDay = `${day}${"d".repeat(Math.max(0, 2 - day.length))}`;
-  const paddedMonth = `${month}${"m".repeat(Math.max(0, 2 - month.length))}`;
-
-  return `${paddedDay}/${paddedMonth}/${currentYear}`;
+  return `${day}/${month}/${currentYear}`;
 }
 
-function normalizeDateDisplayValue(value) {
+function getDatePartsFromValue(value) {
   const trimmed = String(value || "").trim();
+  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
 
-  if (!trimmed) {
-    return formatCurrentYearDateInput("");
+  if (!match) {
+    return { day: "", month: "" };
   }
 
-  return isValidCurrentYearDate(trimmed) ? trimmed : formatCurrentYearDateInput(trimmed);
+  return {
+    day: match[1],
+    month: match[2],
+  };
 }
 
 export default function BookingFlow({ service }) {
@@ -111,6 +108,7 @@ export default function BookingFlow({ service }) {
   const [selections, setSelections] = useState([]);
   const [numberDrafts, setNumberDrafts] = useState({});
   const [inputDrafts, setInputDrafts] = useState({});
+  const [dateDrafts, setDateDrafts] = useState({});
   const [showFootwearContactOptions, setShowFootwearContactOptions] = useState(false);
   const [basket, setBasket] = useState(() => getStoredBookingBasket());
   const [itemAddedMessage, setItemAddedMessage] = useState("");
@@ -159,15 +157,15 @@ export default function BookingFlow({ service }) {
     currentStep.defaultValue ??
     currentStep.min ??
     1;
-  const rawInputValue =
-    inputDrafts[currentStep.key] ??
-    currentSelection?.value ??
-    (currentStep.inputType === "date" ? formatCurrentYearDateInput("") : "");
-  const inputValue =
-    currentStep.inputType === "date"
-      ? normalizeDateDisplayValue(rawInputValue)
-      : rawInputValue;
+  const rawInputValue = inputDrafts[currentStep.key] ?? currentSelection?.value ?? "";
+  const inputValue = currentStep.inputType === "date" ? "" : rawInputValue;
   const dateBounds = currentStep.inputType === "date" ? getCurrentYearDateBounds() : null;
+  const dateDraft =
+    dateDrafts[currentStep.key] ?? getDatePartsFromValue(currentSelection?.value);
+  const dateValue = buildCurrentYearDateValue(
+    dateDraft.day || "dd",
+    dateDraft.month || "mm",
+  );
 
   const commitSelection = (item) => {
     const preservedSelections = selections.filter(
@@ -204,7 +202,10 @@ export default function BookingFlow({ service }) {
   };
 
   const handleInputContinue = () => {
-    const trimmedValue = String(inputValue || "").trim();
+    const trimmedValue =
+      currentStep.inputType === "date"
+        ? buildCurrentYearDateValue(dateDraft.day, dateDraft.month)
+        : String(inputValue || "").trim();
 
     if (!trimmedValue) {
       return;
@@ -216,6 +217,18 @@ export default function BookingFlow({ service }) {
 
     setInputDrafts((current) => ({ ...current, [currentStep.key]: trimmedValue }));
     commitSelection(buildInputSelection(currentStep, trimmedValue));
+  };
+
+  const handleDatePartChange = (part, rawValue) => {
+    const sanitized = String(rawValue || "").replace(/\D/g, "").slice(0, 2);
+
+    setDateDrafts((current) => ({
+      ...current,
+      [currentStep.key]: {
+        ...dateDraft,
+        [part]: sanitized,
+      },
+    }));
   };
 
   const goBack = () => {
@@ -231,6 +244,7 @@ export default function BookingFlow({ service }) {
     setSelections([]);
     setNumberDrafts({});
     setInputDrafts({});
+    setDateDrafts({});
     setShowFootwearContactOptions(false);
   };
 
@@ -239,6 +253,7 @@ export default function BookingFlow({ service }) {
     setSelections([]);
     setNumberDrafts({});
     setInputDrafts({});
+    setDateDrafts({});
     setShowFootwearContactOptions(false);
   };
 
@@ -369,38 +384,51 @@ export default function BookingFlow({ service }) {
               </div>
             ) : currentStep.kind === "input" ? (
               <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
-                <input
-                  type={currentStep.inputType === "date" ? "text" : currentStep.inputType || "text"}
-                  inputMode={currentStep.inputType === "date" ? "numeric" : undefined}
-                  value={inputValue}
-                  min={dateBounds?.min}
-                  max={dateBounds?.max}
-                  onFocus={() => {
-                    if (currentStep.inputType !== "date") {
-                      return;
+                {currentStep.inputType === "date" ? (
+                  <div className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4">
+                    <div className="flex items-center justify-center gap-3 text-center">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={dateDraft.day}
+                        onChange={(event) => handleDatePartChange("day", event.target.value)}
+                        placeholder="dd"
+                        className="w-16 border-0 bg-transparent text-center text-2xl font-semibold text-[#3f363a] outline-none placeholder:text-[#b0a8ac]"
+                      />
+                      <span className="text-2xl font-semibold text-[#7b7276]">/</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={dateDraft.month}
+                        onChange={(event) => handleDatePartChange("month", event.target.value)}
+                        placeholder="mm"
+                        className="w-16 border-0 bg-transparent text-center text-2xl font-semibold text-[#3f363a] outline-none placeholder:text-[#b0a8ac]"
+                      />
+                      <span className="text-2xl font-semibold text-[#7b7276]">/</span>
+                      <span className="text-2xl font-semibold text-[#7b7276]">
+                        {new Date().getFullYear()}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-center text-sm text-[#7b7276]">
+                      {dateValue}
+                    </p>
+                  </div>
+                ) : (
+                  <input
+                    type={currentStep.inputType || "text"}
+                    value={inputValue}
+                    min={dateBounds?.min}
+                    max={dateBounds?.max}
+                    onChange={(event) =>
+                      setInputDrafts((current) => ({
+                        ...current,
+                        [currentStep.key]: event.target.value,
+                      }))
                     }
-
-                    setInputDrafts((current) => ({
-                      ...current,
-                      [currentStep.key]: normalizeDateDisplayValue(current[currentStep.key]),
-                    }));
-                  }}
-                  onChange={(event) =>
-                    setInputDrafts((current) => ({
-                      ...current,
-                      [currentStep.key]:
-                        currentStep.inputType === "date"
-                          ? formatCurrentYearDateInput(event.target.value)
-                          : event.target.value,
-                    }))
-                  }
-                  placeholder={
-                    currentStep.inputType === "date"
-                      ? `dd/mm/${new Date().getFullYear()}`
-                      : currentStep.placeholder
-                  }
-                  className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none placeholder:text-[#9b9397]"
-                />
+                    placeholder={currentStep.placeholder}
+                    className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none placeholder:text-[#9b9397]"
+                  />
+                )}
 
                 {currentStep.inputType === "date" && dateBounds && (
                   <p className="mt-3 text-sm text-[#7b7276]">
