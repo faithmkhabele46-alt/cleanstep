@@ -34,26 +34,49 @@ export function isQualifyingLoyaltyVisit(quantity = 0) {
   return Number(quantity) >= LOYALTY_MIN_QUALIFYING_ITEMS;
 }
 
-export function getLoyaltyProgress(totalQualifyingVisits = 0, totalVisits = totalQualifyingVisits) {
-  const safeQualifyingVisits = Number.isFinite(totalQualifyingVisits)
-    ? Math.max(0, totalQualifyingVisits)
+export function getLoyaltyVisitPoints(quantity = 0) {
+  const safeQuantity = Number.isFinite(Number(quantity)) ? Number(quantity) : 0;
+
+  if (safeQuantity < LOYALTY_MIN_QUALIFYING_ITEMS) {
+    return 0;
+  }
+
+  return safeQuantity / 2;
+}
+
+export function formatLoyaltyPoints(points = 0) {
+  const safePoints = Number.isFinite(Number(points)) ? Number(points) : 0;
+
+  if (Number.isInteger(safePoints)) {
+    return String(safePoints);
+  }
+
+  return safePoints.toFixed(1).replace(/\.0$/, "");
+}
+
+export function getLoyaltyProgress(totalPoints = 0, totalVisits = 0) {
+  const safePoints = Number.isFinite(totalPoints)
+    ? Math.max(0, Number(totalPoints))
     : 0;
-  const safeTotalVisits = Number.isFinite(totalVisits) ? Math.max(0, totalVisits) : safeQualifyingVisits;
-  const visitsIntoCurrentReward = safeQualifyingVisits % LOYALTY_REWARD_TARGET;
-  const visitsLeft =
-    visitsIntoCurrentReward === 0 && safeQualifyingVisits > 0
-      ? LOYALTY_REWARD_TARGET
-      : LOYALTY_REWARD_TARGET - visitsIntoCurrentReward;
+  const safeTotalVisits = Number.isFinite(totalVisits) ? Math.max(0, totalVisits) : 0;
+  const pointsIntoCurrentReward = safePoints % LOYALTY_REWARD_TARGET;
+  const rewardUnlocked =
+    safePoints >= LOYALTY_REWARD_TARGET && pointsIntoCurrentReward === 0;
+  const pointsLeft = rewardUnlocked
+    ? 0
+    : Math.max(0, LOYALTY_REWARD_TARGET - pointsIntoCurrentReward);
+  const currentCyclePoints = rewardUnlocked ? LOYALTY_REWARD_TARGET : pointsIntoCurrentReward;
 
   return {
     totalVisits: safeTotalVisits,
-    qualifyingVisits: safeQualifyingVisits,
+    totalPoints: safePoints,
     rewardTarget: LOYALTY_REWARD_TARGET,
     minimumQualifyingItems: LOYALTY_MIN_QUALIFYING_ITEMS,
-    completedRewards: Math.floor(safeQualifyingVisits / LOYALTY_REWARD_TARGET),
-    visitsIntoCurrentReward,
-    visitsLeft,
-    progressPercentage: Math.round((visitsIntoCurrentReward / LOYALTY_REWARD_TARGET) * 100),
+    completedRewards: Math.floor(safePoints / LOYALTY_REWARD_TARGET),
+    pointsIntoCurrentReward: currentCyclePoints,
+    pointsLeft,
+    rewardUnlocked,
+    progressPercentage: Math.round((currentCyclePoints / LOYALTY_REWARD_TARGET) * 100),
   };
 }
 
@@ -76,9 +99,9 @@ export function buildLoyaltyShareMessage({
   customerName = "",
   whatsAppNumber = "",
   totalVisits = 0,
-  qualifyingVisits = totalVisits,
+  totalPoints = 0,
 } = {}) {
-  const progress = getLoyaltyProgress(qualifyingVisits, totalVisits);
+  const progress = getLoyaltyProgress(totalPoints, totalVisits);
   const link = buildLoyaltyDashboardUrl(whatsAppNumber);
   const greeting = customerName ? `Hi ${customerName},` : "Hi,";
 
@@ -86,9 +109,11 @@ export function buildLoyaltyShareMessage({
     greeting,
     "",
     "Your Cleanstep loyalty visit has been recorded.",
-    `You have ${progress.totalVisits} recorded visit${progress.totalVisits === 1 ? "" : "s"}, and ${progress.qualifyingVisits} qualifying visit${progress.qualifyingVisits === 1 ? "" : "s"} count toward your reward.`,
-    `A visit qualifies when you bring in ${progress.minimumQualifyingItems} or more shoes.`,
-    `You need ${progress.visitsLeft} more qualifying visit${progress.visitsLeft === 1 ? "" : "s"} to reach your free wash.`,
+    `You have ${progress.totalVisits} recorded visit${progress.totalVisits === 1 ? "" : "s"} and ${formatLoyaltyPoints(progress.totalPoints)} loyalty point${progress.totalPoints === 1 ? "" : "s"}.`,
+    `Cleanstep gives 1 point for every 2 shoes in the same drop-off. 3 shoes = 1.5 points, 4 shoes = 2 points, and 5 shoes = 2.5 points.`,
+    progress.pointsLeft > 0
+      ? `You need ${formatLoyaltyPoints(progress.pointsLeft)} more point${progress.pointsLeft === 1 ? "" : "s"} to reach your free wash.`
+      : "You have reached your free wash reward.",
     "",
     "Use this link to register or sign in with your WhatsApp number and password:",
     link,

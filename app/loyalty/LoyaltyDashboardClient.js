@@ -60,7 +60,9 @@ function VisitCard({ visit }) {
               : "border border-[#e1251b]/12 bg-[#fff3f2] text-[#e1251b]",
           )}
         >
-          {visit.qualifies ? "Counts toward reward" : "Need 2 or more shoes to count"}
+          {visit.qualifies
+            ? `${visit.points} point${visit.points === 1 ? "" : "s"} earned`
+            : "Need 2 or more shoes to earn points"}
         </span>
       </div>
       {visit.notes && <p className="mt-3 text-sm text-[#5c5357]">{visit.notes}</p>}
@@ -439,12 +441,12 @@ export default function LoyaltyDashboardClient({
                 <div className="rounded-[30px] border border-[#1f4b8f]/10 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_52%,#eef4ff_100%)] p-6 shadow-[0_18px_45px_rgba(31,75,143,0.08)]">
                   <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Loyalty progress</p>
                   <h2 className="mt-3 text-3xl font-semibold text-[#3f363a]">
-                    {state.progress.visitsLeft === 0
+                    {state.progress.pointsLeft === 0
                       ? "You unlocked your free wash"
-                      : `${state.progress.visitsLeft} more qualifying visit${state.progress.visitsLeft === 1 ? "" : "s"} to go`}
+                      : `${state.progress.pointsLeft} more point${state.progress.pointsLeft === 1 ? "" : "s"} to go`}
                   </h2>
                   <p className="mt-2 max-w-2xl text-sm text-[#5c5357]">
-                    Bring in {state.progress.minimumQualifyingItems} or more shoes in one drop-off for the visit to count. Your free wash unlocks after {state.progress.rewardTarget} qualifying visits.
+                    Cleanstep gives 1 point for every 2 shoes in the same drop-off. 3 shoes = 1.5 points, 4 shoes = 2 points, and 5 shoes = 2.5 points. Your free wash unlocks after {state.progress.rewardTarget} points.
                   </p>
 
                   <div className="mt-6 flex flex-wrap gap-3">
@@ -452,7 +454,7 @@ export default function LoyaltyDashboardClient({
                       <ProgressStamp
                         key={`stamp-${index + 1}`}
                         number={index + 1}
-                        filled={index < state.progress.visitsIntoCurrentReward}
+                        filled={index < Math.floor(state.progress.pointsIntoCurrentReward)}
                       />
                     ))}
                   </div>
@@ -477,9 +479,9 @@ export default function LoyaltyDashboardClient({
                       </p>
                     </div>
                     <div className="rounded-3xl border border-[#e1251b]/14 bg-[#fff3f2] p-5">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Qualifying visits</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Loyalty points</p>
                       <p className="mt-3 text-3xl font-semibold text-[#e1251b]">
-                        {state.progress.qualifyingVisits}
+                        {state.progress.totalPoints}
                       </p>
                     </div>
                   </div>
@@ -490,12 +492,12 @@ export default function LoyaltyDashboardClient({
                   <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">How the free wash works</h2>
                   <div className="mt-5 space-y-3">
                     <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
-                      <p className="font-semibold text-[#1f4b8f]">1. Bring 2 or more shoes</p>
-                      <p className="mt-1 text-sm text-[#5c5357]">A visit only counts when at least 2 shoes are logged in together.</p>
+                      <p className="font-semibold text-[#1f4b8f]">1. Two shoes = one point</p>
+                      <p className="mt-1 text-sm text-[#5c5357]">If one drop-off has 2 shoes, you earn 1 point. Every extra shoe adds another half point.</p>
                     </div>
                     <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
-                      <p className="font-semibold text-[#1f4b8f]">2. Reach 5 qualifying visits</p>
-                      <p className="mt-1 text-sm text-[#5c5357]">After 5 qualifying drop-offs, you earn your free wash reward.</p>
+                      <p className="font-semibold text-[#1f4b8f]">2. Reach 5 loyalty points</p>
+                      <p className="mt-1 text-sm text-[#5c5357]">As soon as your total reaches 5 points, your free wash reward is ready.</p>
                     </div>
                     <div className="rounded-2xl border border-[#e1251b]/12 bg-[#fff3f2] p-4">
                       <p className="font-semibold text-[#e1251b]">3. Watch your dashboard grow</p>
@@ -510,7 +512,7 @@ export default function LoyaltyDashboardClient({
                   <p className="text-xs uppercase tracking-[0.2em] text-[#7b7276]">Visit history</p>
                   <h2 className="mt-2 text-2xl font-semibold">Every recorded Cleanstep drop-off</h2>
                   <p className="mt-1 text-sm text-[#5c5357]">
-                    Each visit shows whether it counted toward your reward.
+                    Each visit shows how many points it added to your reward journey.
                   </p>
                 </div>
                 <button

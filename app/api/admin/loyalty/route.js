@@ -5,6 +5,7 @@ import {
   buildLoyaltyDashboardUrl,
   buildLoyaltyShareMessage,
   formatWhatsAppNumber,
+  getLoyaltyVisitPoints,
   getLoyaltyProgress,
   isQualifyingLoyaltyVisit,
   normalizeWhatsAppNumber,
@@ -32,6 +33,7 @@ async function loadRecentVisits(supabase) {
     notes: visit.notes,
     quantity: visit.quantity || 1,
     qualifies: isQualifyingLoyaltyVisit(visit.quantity || 1),
+    points: getLoyaltyVisitPoints(visit.quantity || 1),
     createdAt: visit.created_at,
     customerId: visit.loyalty_customers?.id || "",
     customerName: visit.loyalty_customers?.customer_name || "Unknown customer",
@@ -124,8 +126,25 @@ export async function POST(request) {
     const body = await request.json();
     const customerName = body.customerName?.trim();
     const whatsAppNumber = normalizeWhatsAppNumber(body.whatsAppNumber);
-    const shoeType = body.shoeType?.trim();
-    const quantity = Math.max(1, Number(body.quantity) || 1);
+    const visitItems = Array.isArray(body.visitItems)
+      ? body.visitItems
+          .map((item) => ({
+            label: item?.label?.trim(),
+            quantity: Math.max(1, Number(item?.quantity) || 1),
+          }))
+          .filter((item) => item.label)
+      : [];
+    const shoeType =
+      body.shoeType?.trim() ||
+      visitItems
+        .map((item) =>
+          item.quantity > 1 ? `${item.label} x${item.quantity}` : item.label,
+        )
+        .join(" | ");
+    const quantity =
+      visitItems.length > 0
+        ? visitItems.reduce((sum, item) => sum + item.quantity, 0)
+        : Math.max(1, Number(body.quantity) || 1);
     const visitDate = body.visitDate;
     const receiptNumber = body.receiptNumber?.trim() || null;
     const notes = body.notes?.trim() || null;
@@ -216,16 +235,17 @@ export async function POST(request) {
       throw visitsError;
     }
 
-    const qualifyingVisits = (allVisits || []).filter((visit) =>
-      isQualifyingLoyaltyVisit(visit.quantity || 1),
-    ).length;
-    const progress = getLoyaltyProgress(qualifyingVisits, count || 0);
+    const totalPoints = (allVisits || []).reduce(
+      (sum, visit) => sum + getLoyaltyVisitPoints(visit.quantity || 1),
+      0,
+    );
+    const progress = getLoyaltyProgress(totalPoints, count || 0);
     const dashboardUrl = buildLoyaltyDashboardUrl(whatsAppNumber);
     const shareMessage = buildLoyaltyShareMessage({
       customerName,
       whatsAppNumber,
       totalVisits: progress.totalVisits,
-      qualifyingVisits: progress.qualifyingVisits,
+      totalPoints: progress.totalPoints,
     });
 
     return NextResponse.json({
@@ -238,6 +258,7 @@ export async function POST(request) {
         receiptNumber: savedVisit.receipt_number,
         notes: savedVisit.notes,
         quantity: savedVisit.quantity || 1,
+        points: getLoyaltyVisitPoints(savedVisit.quantity || 1),
         createdAt: savedVisit.created_at,
       },
       customer: {

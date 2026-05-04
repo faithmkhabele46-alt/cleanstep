@@ -2,13 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const southAfricaBounds = {
-  north: -22.1,
-  south: -34.9,
-  west: 16.4,
-  east: 32.9,
-};
-
 function loadGoogleMapsPlaces(apiKey) {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
@@ -52,6 +45,7 @@ export default function PlaceAutocompleteInput({
   const autocompleteServiceRef = useRef(null);
   const blurTimeoutRef = useRef(null);
   const [loadState, setLoadState] = useState("idle");
+  const [errorMessage, setErrorMessage] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -72,10 +66,12 @@ export default function PlaceAutocompleteInput({
         autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
 
         setLoadState("ready");
+        setErrorMessage("");
       })
       .catch(() => {
         if (active) {
           setLoadState("error");
+          setErrorMessage("Google Maps suggestions could not load, so you can type the address manually.");
         }
       });
 
@@ -99,16 +95,23 @@ export default function PlaceAutocompleteInput({
       {
         input: trimmedValue,
         componentRestrictions: { country: "za" },
-        bounds: southAfricaBounds,
-        types: ["geocode"],
+        region: "za",
       },
       (predictions, status) => {
         if (status !== window.google?.maps?.places?.PlacesServiceStatus?.OK || !predictions) {
           setSuggestions([]);
           setShowSuggestions(false);
+          if (status === window.google?.maps?.places?.PlacesServiceStatus?.REQUEST_DENIED) {
+            setErrorMessage(
+              "Google Maps is blocking address suggestions on this site. Add https://cleanstep.vercel.app/* to the API key referrer list in Google Cloud.",
+            );
+          } else if (status === window.google?.maps?.places?.PlacesServiceStatus?.ZERO_RESULTS) {
+            setErrorMessage("Keep typing the street name as well so Google can match the address.");
+          }
           return;
         }
 
+        setErrorMessage("");
         setSuggestions(
           predictions.slice(0, 5).map((prediction) => ({
             id: prediction.place_id,
@@ -126,17 +129,21 @@ export default function PlaceAutocompleteInput({
     }
 
     if (loadState === "error") {
-      return "Google Maps suggestions could not load, so you can type the address manually.";
+      return errorMessage || "Google Maps suggestions could not load, so you can type the address manually.";
     }
 
     if (loadState === "ready") {
+      if (errorMessage) {
+        return errorMessage;
+      }
+
       return suggestions.length > 0
         ? "Tap one of the matching address suggestions below."
         : "Keep typing and the matching address suggestions will appear below.";
     }
 
     return "Loading Google Maps suggestions...";
-  }, [apiKey, loadState, suggestions.length]);
+  }, [apiKey, errorMessage, loadState, suggestions.length]);
 
   return (
     <div className="relative">

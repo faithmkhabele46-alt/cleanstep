@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "./supabase-server";
 import {
   formatWhatsAppNumber,
+  getLoyaltyVisitPoints,
   getLoyaltyProgress,
   isQualifyingLoyaltyVisit,
   normalizeWhatsAppNumber,
@@ -72,10 +73,11 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
       notes: visit.notes,
       quantity: visit.quantity || 1,
       qualifies: isQualifyingLoyaltyVisit(visit.quantity || 1),
+      points: getLoyaltyVisitPoints(visit.quantity || 1),
       createdAt: visit.created_at,
     })) || [];
-  const qualifyingVisits = mappedVisits.filter((visit) => visit.qualifies).length;
-  const progress = getLoyaltyProgress(qualifyingVisits, mappedVisits.length);
+  const totalPoints = mappedVisits.reduce((sum, visit) => sum + visit.points, 0);
+  const progress = getLoyaltyProgress(totalPoints, mappedVisits.length);
 
   return {
     found: true,

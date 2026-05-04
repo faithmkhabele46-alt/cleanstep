@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { formatCurrency } from "../lib/booking";
+import { formatLoyaltyPoints, getLoyaltyVisitPoints } from "../lib/loyalty";
 
 const loyaltyCategoryOptions = [
   { name: "Standard Sneakers & Shoes", value: "ordinary" },
@@ -27,6 +28,35 @@ function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
+function PasswordField({
+  id,
+  value,
+  onChange,
+  placeholder,
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative mt-2">
+      <input
+        id={id}
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 pr-14 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+        placeholder={placeholder}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#1f4b8f]"
+      >
+        {visible ? "Hide" : "Show"}
+      </button>
+    </div>
+  );
+}
+
 function getLoyaltyVisitLabel(form) {
   const category = loyaltyCategoryOptions.find((item) => item.value === form.visitCategory);
   const variant = loyaltyVariantOptions.find((item) => item.value === form.visitVariant);
@@ -39,42 +69,41 @@ function getLoyaltyVisitLabel(form) {
   return `${variant.name} - ${category.name} (${quantity} item${quantity === 1 ? "" : "s"})`;
 }
 
-function LoyaltyVisitCard({ visit }) {
-  return (
-    <div className="rounded-3xl border border-[#1f4b8f]/12 bg-white p-5 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">
-            {visit.visitDate}
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-[#3f363a]">{visit.customerName}</h2>
-          <p className="mt-1 text-sm text-[#5c5357]">{visit.shoeType}</p>
-        </div>
-        {visit.receiptNumber && (
-          <span className="rounded-full border border-[#1f4b8f]/14 bg-[#eef4ff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#1f4b8f]">
-            {visit.receiptNumber}
-          </span>
-        )}
-      </div>
-      <div className="mt-4 grid gap-3 text-sm text-[#5c5357] sm:grid-cols-3">
-        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-3">
-          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">WhatsApp</p>
-          <p className="mt-2">{visit.whatsAppNumber}</p>
-        </div>
-        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-3">
-          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Quantity</p>
-          <p className="mt-2">{visit.quantity} item{visit.quantity === 1 ? "" : "s"}</p>
-          <p className={classNames("mt-1 text-xs font-semibold", visit.qualifies ? "text-[#1f4b8f]" : "text-[#e1251b]")}>
-            {visit.qualifies ? "Qualifies for reward" : "Does not count toward reward"}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-3">
-          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Notes</p>
-          <p className="mt-2">{visit.notes || "No extra notes"}</p>
-        </div>
-      </div>
-    </div>
-  );
+function buildLoyaltyVisitItem(form) {
+  const category = loyaltyCategoryOptions.find((item) => item.value === form.visitCategory);
+  const variant = loyaltyVariantOptions.find((item) => item.value === form.visitVariant);
+  const quantity = Math.max(1, Number(form.quantity) || 1);
+
+  if (!category || !variant) {
+    return null;
+  }
+
+  return {
+    id: `${variant.value}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    categoryValue: category.value,
+    variantValue: variant.value,
+    categoryName: category.name,
+    variantName: variant.name,
+    quantity,
+    label: `${variant.name} - ${category.name}`,
+    points: getLoyaltyVisitPoints(quantity),
+  };
+}
+
+function formatVisitItemSummary(item) {
+  if (!item) {
+    return "";
+  }
+
+  return `${item.variantName} - ${item.categoryName} (${item.quantity} item${item.quantity === 1 ? "" : "s"})`;
+}
+
+function formatVisitItemsForSave(items = []) {
+  return items
+    .map((item) =>
+      item.quantity > 1 ? `${item.label} x${item.quantity}` : item.label,
+    )
+    .join(" | ");
 }
 
 function BookingCard({ booking }) {
@@ -156,6 +185,7 @@ export default function AdminPage() {
     visitCategory: "",
     visitVariant: "",
     quantity: 1,
+    visitItems: [],
     visitDate: new Date().toISOString().slice(0, 10),
     receiptNumber: "",
     notes: "",
@@ -288,6 +318,43 @@ export default function AdminPage() {
     }));
   }
 
+  function addCurrentVisitItem() {
+    const visitItem = buildLoyaltyVisitItem(loyaltyForm);
+
+    if (!visitItem) {
+      setSubmitState({
+        loading: false,
+        error: "Choose the shoe category, treatment option, and quantity first.",
+        success: "",
+        dashboardUrl: "",
+        shareMessage: "",
+        progress: null,
+      });
+      return false;
+    }
+
+    setLoyaltyForm((current) => ({
+      ...current,
+      visitItems: [...current.visitItems, visitItem],
+      visitCategory: "",
+      visitVariant: "",
+      quantity: 1,
+    }));
+    setSubmitState((current) => ({
+      ...current,
+      error: "",
+    }));
+
+    return true;
+  }
+
+  function removeVisitItem(itemId) {
+    setLoyaltyForm((current) => ({
+      ...current,
+      visitItems: current.visitItems.filter((item) => item.id !== itemId),
+    }));
+  }
+
   async function handleAdminLogin(event) {
     event.preventDefault();
     setLoginState({
@@ -393,9 +460,15 @@ export default function AdminPage() {
     });
 
     try {
-      const shoeType = getLoyaltyVisitLabel(loyaltyForm);
+      const pendingVisitItem = buildLoyaltyVisitItem(loyaltyForm);
+      const visitItems =
+        loyaltyForm.visitItems.length > 0
+          ? loyaltyForm.visitItems
+          : pendingVisitItem
+            ? [pendingVisitItem]
+            : [];
 
-      if (!shoeType) {
+      if (visitItems.length === 0) {
         setSubmitState({
           loading: false,
           error: "Choose the shoe category, treatment option, and quantity first.",
@@ -407,12 +480,16 @@ export default function AdminPage() {
         return;
       }
 
+      const totalQuantity = visitItems.reduce((sum, item) => sum + item.quantity, 0);
+
       const response = await fetch("/api/admin/loyalty", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...loyaltyForm,
-          shoeType,
+          shoeType: formatVisitItemsForSave(visitItems),
+          quantity: totalQuantity,
+          visitItems,
         }),
       });
       const data = await response.json();
@@ -447,6 +524,7 @@ export default function AdminPage() {
         visitCategory: "",
         visitVariant: "",
         quantity: 1,
+        visitItems: [],
         receiptNumber: "",
         notes: "",
       }));
@@ -525,6 +603,10 @@ export default function AdminPage() {
     (item) => item.category === loyaltyForm.visitCategory,
   );
   const visitSummaryLabel = getLoyaltyVisitLabel(loyaltyForm);
+  const pendingVisitItem = buildLoyaltyVisitItem(loyaltyForm);
+  const visitItems = loyaltyForm.visitItems;
+  const totalVisitQuantity = visitItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalVisitPoints = getLoyaltyVisitPoints(totalVisitQuantity);
   const uniqueCustomers = loyaltyState.items.reduce((customers, visit) => {
     if (!visit.customerId || customers.some((customer) => customer.customerId === visit.customerId)) {
       return customers;
@@ -544,7 +626,7 @@ export default function AdminPage() {
     const query = loyaltySearch.trim().toLowerCase();
 
     if (!query) {
-      return true;
+      return false;
     }
 
     return (
@@ -552,6 +634,9 @@ export default function AdminPage() {
       customer.whatsAppNumber.toLowerCase().includes(query)
     );
   });
+  const selectedCustomer = uniqueCustomers.find(
+    (customer) => customer.customerId === selectedCustomerId,
+  );
 
   if (authState.loading) {
     return (
@@ -590,12 +675,10 @@ export default function AdminPage() {
             <label className="text-sm font-semibold text-[#3f363a]" htmlFor="adminPassword">
               Admin password
             </label>
-            <input
+            <PasswordField
               id="adminPassword"
-              type="password"
               value={loginForm.password}
               onChange={(event) => setLoginForm({ password: event.target.value })}
-              className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
               placeholder="Enter the admin password"
             />
             {loginState.error && (
@@ -654,7 +737,7 @@ export default function AdminPage() {
             </button>
           </div>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="mt-8">
             <section className="rounded-3xl border border-[#1f4b8f]/12 bg-white p-6 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
               <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">Loyalty visit logger</p>
               <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">Start from the admin side</h2>
@@ -673,6 +756,34 @@ export default function AdminPage() {
                   className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
                   placeholder="Search by name or WhatsApp number"
                 />
+                {selectedCustomer && (
+                  <div className="mt-3 rounded-2xl border border-[#1f4b8f]/12 bg-white p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[#3f363a]">{selectedCustomer.customerName}</p>
+                        <p className="mt-1 text-sm text-[#5c5357]">{selectedCustomer.whatsAppNumber}</p>
+                        <p className="mt-1 text-xs text-[#7b7276]">
+                          Last visit: {selectedCustomer.latestVisitDate} - {selectedCustomer.latestShoeType}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomerId("");
+                          setLoyaltySearch("");
+                          setCustomerUpdateState({
+                            loading: false,
+                            error: "",
+                            success: "",
+                          });
+                        }}
+                        className="rounded-full border border-[#1f4b8f]/12 px-3 py-1 text-xs font-semibold text-[#1f4b8f] hover:bg-[#eef4ff]"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {filteredCustomers.length > 0 ? (
                   <div className="mt-3 grid gap-3">
                     {filteredCustomers.slice(0, 6).map((customer) => (
@@ -820,10 +931,59 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={addCurrentVisitItem}
+                  className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+                >
+                  Add shoe to this visit
+                </button>
+                {visitItems.length > 0 && (
+                  <div className="rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Current drop-off</p>
+                    <div className="mt-3 space-y-3">
+                      {visitItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-start justify-between gap-3 rounded-2xl border border-[#1f4b8f]/10 bg-white p-4"
+                        >
+                          <div>
+                            <p className="font-semibold text-[#3f363a]">{formatVisitItemSummary(item)}</p>
+                            <p className="mt-1 text-sm text-[#5c5357]">
+                              {item.points > 0
+                                ? `${formatLoyaltyPoints(item.points)} point${item.points === 1 ? "" : "s"} from this line`
+                                : "Need at least 2 shoes on this line to earn points"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeVisitItem(item.id)}
+                            className="rounded-full border border-[#e1251b]/16 bg-[#fff3f2] px-3 py-1 text-xs font-semibold text-[#e1251b] hover:bg-[#ffe7e4]"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 rounded-2xl border border-[#1f4b8f]/10 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
+                      <p className="font-semibold">
+                        {totalVisitQuantity} shoe{totalVisitQuantity === 1 ? "" : "s"} in this drop-off
+                      </p>
+                      <p className="mt-1">
+                        {formatLoyaltyPoints(totalVisitPoints)} point{totalVisitPoints === 1 ? "" : "s"} will be added for this visit.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {visitSummaryLabel && (
                   <div className="rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Current visit</p>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Ready to add</p>
                     <p className="mt-2 font-semibold">{visitSummaryLabel}</p>
+                    {pendingVisitItem && (
+                      <p className="mt-1 text-sm text-[#5c5357]">
+                        This line will add {formatLoyaltyPoints(pendingVisitItem.points)} point{pendingVisitItem.points === 1 ? "" : "s"} when you press “Add shoe to this visit”.
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -905,12 +1065,12 @@ export default function AdminPage() {
                   {submitState.progress && (
                     <>
                       <p className="mt-2">
-                        Total visits: {submitState.progress.totalVisits}. Qualifying visits:{" "}
-                        {submitState.progress.qualifyingVisits}. Visits left until free wash:{" "}
-                        {submitState.progress.visitsLeft}.
+                        Total visits: {submitState.progress.totalVisits}. Loyalty points:{" "}
+                        {formatLoyaltyPoints(submitState.progress.totalPoints)}. Points left until free wash:{" "}
+                        {formatLoyaltyPoints(submitState.progress.pointsLeft)}.
                       </p>
                       <p className="mt-1 text-[#5c5357]">
-                        Only visits with 2 or more shoes count toward the 5-visit free wash reward.
+                        Cleanstep gives 1 point for every 2 shoes in the same drop-off. 3 shoes = 1.5 points, 4 shoes = 2 points, and 5 shoes = 2.5 points.
                       </p>
                     </>
                   )}
@@ -924,34 +1084,6 @@ export default function AdminPage() {
                       />
                     </div>
                   )}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-3xl border border-[#1f4b8f]/12 bg-white p-6 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">Recent loyalty visits</p>
-              <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">What has been logged</h2>
-              <p className="mt-2 text-sm text-[#5c5357]">
-                These are the latest loyalty entries that will appear in the customer dashboard.
-              </p>
-
-              {loyaltyState.loading ? (
-                <div className="mt-6 rounded-3xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-6 text-[#7b7276]">
-                  Loading loyalty visits...
-                </div>
-              ) : loyaltyState.items.length > 0 ? (
-                <div className="mt-6 grid gap-4">
-                  {loyaltyState.items.map((visit) => (
-                    <LoyaltyVisitCard key={visit.id} visit={visit} />
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-6 rounded-3xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-6">
-                  <p className="text-lg font-semibold text-[#3f363a]">No loyalty visits yet</p>
-                  <p className="mt-2 text-sm text-[#5c5357]">
-                    {loyaltyState.message ||
-                      "The first logged shoe drop-off will appear here automatically."}
-                  </p>
                 </div>
               )}
             </section>
