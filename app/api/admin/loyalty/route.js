@@ -41,6 +41,19 @@ async function loadRecentVisits(supabase) {
   }));
 }
 
+async function loadCustomers(supabase) {
+  const { data, error } = await supabase
+    .from("loyalty_customers")
+    .select("id, customer_name, whatsapp_number, updated_at, created_at")
+    .order("customer_name", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
 async function loadCustomerById(supabase, customerId) {
   const { data, error } = await supabase
     .from("loyalty_customers")
@@ -62,6 +75,7 @@ export async function GET() {
         configured: true,
         message: "Admin sign-in is required.",
         items: [],
+        customers: [],
       },
       { status: 401 },
     );
@@ -75,16 +89,41 @@ export async function GET() {
       message:
         "Supabase loyalty access is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable loyalty visits.",
       items: [],
+      customers: [],
     });
   }
 
   try {
-    const items = await loadRecentVisits(supabase);
+    const [items, customers] = await Promise.all([
+      loadRecentVisits(supabase),
+      loadCustomers(supabase),
+    ]);
+    const latestVisitByCustomer = new Map();
+
+    items.forEach((visit) => {
+      if (!visit.customerId || latestVisitByCustomer.has(visit.customerId)) {
+        return;
+      }
+
+      latestVisitByCustomer.set(visit.customerId, visit);
+    });
 
     return NextResponse.json({
       configured: true,
       message: "",
       items,
+      customers: customers.map((customer) => {
+        const latestVisit = latestVisitByCustomer.get(customer.id);
+
+        return {
+          customerId: customer.id,
+          customerName: customer.customer_name,
+          whatsAppNumber: formatWhatsAppNumber(customer.whatsapp_number),
+          latestVisitDate: latestVisit?.visitDate || "",
+          latestShoeType: latestVisit?.shoeType || "",
+          hasVisits: Boolean(latestVisit),
+        };
+      }),
     });
   } catch (error) {
     return NextResponse.json(
@@ -92,6 +131,7 @@ export async function GET() {
         configured: true,
         message: error.message || "Unable to load loyalty visits.",
         items: [],
+        customers: [],
       },
       { status: 500 },
     );

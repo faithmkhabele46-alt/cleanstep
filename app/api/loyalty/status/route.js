@@ -43,7 +43,8 @@ export async function POST(request) {
     if (!customer) {
       return NextResponse.json({
         found: false,
-        message: "No loyalty profile was found for that WhatsApp number yet.",
+        canRegister: true,
+        message: "",
       });
     }
 

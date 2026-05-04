@@ -178,6 +178,7 @@ export default function AdminPage() {
     configured: false,
     message: "",
     items: [],
+    customers: [],
   });
   const [loyaltyForm, setLoyaltyForm] = useState({
     customerName: "",
@@ -235,6 +236,7 @@ export default function AdminPage() {
             configured: false,
             message: "",
             items: [],
+            customers: [],
           });
           return;
         }
@@ -257,6 +259,7 @@ export default function AdminPage() {
           configured: loyaltyData.configured,
           message: loyaltyData.message,
           items: loyaltyData.items || [],
+          customers: loyaltyData.customers || [],
         });
       } catch (error) {
         if (!mounted) {
@@ -274,6 +277,7 @@ export default function AdminPage() {
           configured: false,
           message: error.message || "Unable to load loyalty visits.",
           items: [],
+          customers: [],
         });
         setBookingState({
           loading: false,
@@ -409,6 +413,7 @@ export default function AdminPage() {
         configured: loyaltyData.configured,
         message: loyaltyData.message,
         items: loyaltyData.items || [],
+        customers: loyaltyData.customers || [],
       });
     } catch (error) {
       setLoginState({
@@ -445,6 +450,7 @@ export default function AdminPage() {
       configured: false,
       message: "",
       items: [],
+      customers: [],
     });
   }
 
@@ -536,6 +542,7 @@ export default function AdminPage() {
         configured: loyaltyData.configured,
         message: loyaltyData.message,
         items: loyaltyData.items || [],
+        customers: loyaltyData.customers || [],
       });
     } catch (error) {
       setSubmitState({
@@ -589,6 +596,7 @@ export default function AdminPage() {
         configured: loyaltyData.configured,
         message: loyaltyData.message,
         items: loyaltyData.items || [],
+        customers: loyaltyData.customers || [],
       });
     } catch (error) {
       setCustomerUpdateState({
@@ -607,22 +615,7 @@ export default function AdminPage() {
   const visitItems = loyaltyForm.visitItems;
   const totalVisitQuantity = visitItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalVisitPoints = getLoyaltyVisitPoints(totalVisitQuantity);
-  const uniqueCustomers = loyaltyState.items.reduce((customers, visit) => {
-    if (!visit.customerId || customers.some((customer) => customer.customerId === visit.customerId)) {
-      return customers;
-    }
-
-    customers.push({
-      customerId: visit.customerId,
-      customerName: visit.customerName,
-      whatsAppNumber: visit.whatsAppNumber,
-      latestShoeType: visit.shoeType,
-      latestVisitDate: visit.visitDate,
-    });
-
-    return customers;
-  }, []);
-  const filteredCustomers = uniqueCustomers.filter((customer) => {
+  const filteredCustomers = (loyaltyState.customers || []).filter((customer) => {
     const query = loyaltySearch.trim().toLowerCase();
 
     if (!query) {
@@ -634,7 +627,7 @@ export default function AdminPage() {
       customer.whatsAppNumber.toLowerCase().includes(query)
     );
   });
-  const selectedCustomer = uniqueCustomers.find(
+  const selectedCustomer = (loyaltyState.customers || []).find(
     (customer) => customer.customerId === selectedCustomerId,
   );
 

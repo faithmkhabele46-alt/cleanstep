@@ -100,6 +100,7 @@ export default function LoyaltyDashboardClient({
   initiallyAuthenticated = false,
 }) {
   const [phone, setPhone] = useState(initialPhone);
+  const [customerName, setCustomerName] = useState(initialCustomer?.customerName || "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mode, setMode] = useState(
@@ -178,13 +179,17 @@ export default function LoyaltyDashboardClient({
         setState((current) => ({
           ...current,
           loading: false,
-          error: data.message || "No loyalty profile was found.",
+          error: "",
         }));
-        setMode("lookup");
+        setCustomerName("");
+        setPassword("");
+        setConfirmPassword("");
+        setMode("register");
         return;
       }
 
       setPhone(data.customer.whatsAppNumber);
+      setCustomerName(data.customer.customerName || "");
       setPassword("");
       setConfirmPassword("");
       setState((current) => ({
@@ -215,6 +220,7 @@ export default function LoyaltyDashboardClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          customerName,
           whatsAppNumber: phone,
           password,
           confirmPassword,
@@ -362,8 +368,14 @@ export default function LoyaltyDashboardClient({
                 <form onSubmit={registerLoyaltyAccount}>
                   <p className="text-sm font-semibold text-[#3f363a]">Create your loyalty login</p>
                   <p className="mt-2 text-sm text-[#5c5357]">
-                    This WhatsApp number has already been registered by Cleanstep. Create your password to open the dashboard.
+                    Create your loyalty profile with your WhatsApp number, then use the same details every time you sign in.
                   </p>
+                  <input
+                    value={customerName}
+                    onChange={(event) => setCustomerName(event.target.value)}
+                    placeholder="Your full name"
+                    className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                  />
                   <input
                     value={phone}
                     readOnly

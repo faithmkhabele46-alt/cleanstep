@@ -22,15 +22,16 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
+    const customerName = body.customerName?.trim() || "";
     const whatsAppNumber = normalizeWhatsAppNumber(body.whatsAppNumber);
     const password = body.password || "";
     const confirmPassword = body.confirmPassword || "";
 
-    if (!whatsAppNumber || !password || !confirmPassword) {
+    if (!customerName || !whatsAppNumber || !password || !confirmPassword) {
       return NextResponse.json(
         {
           registered: false,
-          message: "Phone number, password, and confirm password are required.",
+          message: "Name, phone number, password, and confirm password are required.",
         },
         { status: 400 },
       );
@@ -66,17 +67,26 @@ export async function POST(request) {
       throw customerError;
     }
 
-    if (!customer) {
-      return NextResponse.json(
-        {
-          registered: false,
-          message: "This WhatsApp number has not been registered by Cleanstep yet.",
-        },
-        { status: 404 },
-      );
+    let loyaltyCustomer = customer;
+
+    if (!loyaltyCustomer) {
+      const { data: insertedCustomer, error: insertCustomerError } = await supabase
+        .from("loyalty_customers")
+        .insert({
+          customer_name: customerName,
+          whatsapp_number: whatsAppNumber,
+        })
+        .select("id, customer_name, whatsapp_number")
+        .single();
+
+      if (insertCustomerError) {
+        throw insertCustomerError;
+      }
+
+      loyaltyCustomer = insertedCustomer;
     }
 
-    if (customer.loyalty_accounts) {
+    if (loyaltyCustomer.loyalty_accounts) {
       return NextResponse.json(
         {
           registered: false,
@@ -91,7 +101,7 @@ export async function POST(request) {
     const { error: insertAccountError } = await supabase
       .from("loyalty_accounts")
       .insert({
-        customer_id: customer.id,
+        customer_id: loyaltyCustomer.id,
         password_salt: salt,
         password_hash: hash,
       });
@@ -101,7 +111,7 @@ export async function POST(request) {
     }
 
     await setLoyaltySessionCookie({
-      customerId: customer.id,
+      customerId: loyaltyCustomer.id,
       whatsAppNumber,
     });
 
@@ -109,9 +119,9 @@ export async function POST(request) {
       registered: true,
       message: "Loyalty account created successfully.",
       customer: {
-        id: customer.id,
-        customerName: customer.customer_name,
-        whatsAppNumber: customer.whatsapp_number,
+        id: loyaltyCustomer.id,
+        customerName: loyaltyCustomer.customer_name,
+        whatsAppNumber: loyaltyCustomer.whatsapp_number,
       },
     });
   } catch (error) {
