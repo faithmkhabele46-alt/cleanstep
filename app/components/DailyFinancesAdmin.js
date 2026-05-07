@@ -58,9 +58,10 @@ export default function DailyFinancesAdmin() {
   useEffect(() => {
     let mounted = true;
 
-    async function loadDailyFinances() {
+    async function loadDailyFinances(selectedDate = "") {
       try {
-        const response = await fetch("/api/admin/daily-finances", { cache: "no-store" });
+        const query = selectedDate ? `?saleDate=${encodeURIComponent(selectedDate)}` : "";
+        const response = await fetch(`/api/admin/daily-finances${query}`, { cache: "no-store" });
         const data = await response.json();
 
         if (!mounted) {
@@ -116,6 +117,57 @@ export default function DailyFinancesAdmin() {
       mounted = false;
     };
   }, []);
+
+  async function handleSaleDateChange(nextDate) {
+    setFinanceState((current) => ({
+      ...current,
+      loading: true,
+      saleDate: nextDate,
+    }));
+    setSubmitState({
+      loading: false,
+      error: "",
+      success: "",
+    });
+
+    try {
+      const response = await fetch(
+        `/api/admin/daily-finances?saleDate=${encodeURIComponent(nextDate)}`,
+        { cache: "no-store" },
+      );
+      const data = await response.json();
+
+      setFinanceState({
+        loading: false,
+        configured: data.configured,
+        message: data.message || "",
+        saleDate: data.saleDate || nextDate,
+        products: data.products || [],
+        items: data.items || [],
+        summary: data.summary || {
+          totalSales: 0,
+          cashTotal: 0,
+          cardTotal: 0,
+          totalUnits: 0,
+          productTotals: [],
+        },
+      });
+    } catch (error) {
+      setFinanceState((current) => ({
+        ...current,
+        loading: false,
+        message: error.message || "Unable to load that date.",
+        items: [],
+        summary: {
+          totalSales: 0,
+          cashTotal: 0,
+          cardTotal: 0,
+          totalUnits: 0,
+          productTotals: [],
+        },
+      }));
+    }
+  }
 
   const selectedProduct = useMemo(
     () => financeState.products.find((item) => item.code === saleForm.productCode) || null,
@@ -266,6 +318,19 @@ export default function DailyFinancesAdmin() {
                 <div className="rounded-full border border-[#1f4b8f]/12 bg-white px-4 py-2 text-sm font-semibold text-[#1f4b8f]">
                   {selectedProduct ? selectedProduct.category : "Choose item"}
                 </div>
+              </div>
+
+              <div className="mt-5">
+                <label className="text-sm font-semibold text-[#3f363a]" htmlFor="dailySaleDate">
+                  Show finances for date
+                </label>
+                <input
+                  id="dailySaleDate"
+                  type="date"
+                  value={financeState.saleDate}
+                  onChange={(event) => handleSaleDateChange(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                />
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -421,6 +486,9 @@ export default function DailyFinancesAdmin() {
                             <p className="font-semibold text-[#3f363a]">{item.productName}</p>
                             <p className="mt-1 text-sm text-[#7b7276]">
                               {item.quantity} x {formatCurrency(item.unitPrice)}
+                            </p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#9aa2b4]">
+                              {item.saleDate}
                             </p>
                           </div>
                           <div className="text-right">
