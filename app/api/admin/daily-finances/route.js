@@ -4,7 +4,9 @@ import { createServerSupabaseClient } from "../../../lib/supabase-server";
 import {
   DAILY_FINANCE_PRODUCTS,
   calculateDailyFinancePricing,
+  getDailyFinanceProduct,
   getJohannesburgDateString,
+  summarizeDailyFinanceHistory,
   summarizeDailyFinanceSales,
 } from "../../../lib/daily-finances";
 
@@ -16,6 +18,34 @@ async function loadSalesByDate(supabase, saleDate) {
     )
     .eq("sale_date", saleDate)
     .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).map((item) => ({
+    id: item.id,
+    productCode: item.product_code,
+    productName: item.product_name,
+    category: item.category,
+    quantity: item.quantity,
+    unitPrice: Number(item.unit_price || 0),
+    total: Number(item.total || 0),
+    paymentMethod: item.payment_method,
+    saleDate: item.sale_date,
+    createdAt: item.created_at,
+  }));
+}
+
+async function loadRecentSales(supabase) {
+  const { data, error } = await supabase
+    .from("daily_finance_sales")
+    .select(
+      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+    )
+    .order("sale_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(300);
 
   if (error) {
     throw error;
@@ -68,7 +98,10 @@ export async function GET(request) {
   const saleDate = searchParams.get("saleDate") || getJohannesburgDateString();
 
   try {
-    const items = await loadSalesByDate(supabase, saleDate);
+    const [items, recentItems] = await Promise.all([
+      loadSalesByDate(supabase, saleDate),
+      loadRecentSales(supabase),
+    ]);
 
     return NextResponse.json({
       configured: true,
@@ -77,6 +110,7 @@ export async function GET(request) {
       products: DAILY_FINANCE_PRODUCTS,
       items,
       summary: summarizeDailyFinanceSales(items),
+      history: summarizeDailyFinanceHistory(recentItems),
     });
   } catch (error) {
     return NextResponse.json(
@@ -87,6 +121,7 @@ export async function GET(request) {
         products: DAILY_FINANCE_PRODUCTS,
         items: [],
         summary: summarizeDailyFinanceSales([]),
+        history: [],
       },
       { status: 500 },
     );
@@ -177,7 +212,10 @@ export async function POST(request) {
       throw error;
     }
 
-    const items = await loadSalesByDate(supabase, saleDate);
+    const [items, recentItems] = await Promise.all([
+      loadSalesByDate(supabase, saleDate),
+      loadRecentSales(supabase),
+    ]);
 
     return NextResponse.json({
       saved: true,
@@ -197,6 +235,7 @@ export async function POST(request) {
       saleDate,
       items,
       summary: summarizeDailyFinanceSales(items),
+      history: summarizeDailyFinanceHistory(recentItems),
       pricing,
     });
   } catch (error) {
@@ -204,6 +243,173 @@ export async function POST(request) {
       {
         saved: false,
         message: error.message || "Unable to save the sale.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const supabase = createServerSupabaseClient();
+
+  if (!supabase) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message:
+          "Supabase finance access is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to update daily finances.",
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const saleId = body.saleId;
+    const productCode = body.productCode;
+    const paymentMethod = body.paymentMethod;
+    const saleDate = body.saleDate || getJohannesburgDateString();
+    const quantity = Math.max(1, Number(body.quantity) || 1);
+
+    if (!saleId || !productCode || !paymentMethod) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "Sale, product, and payment method are required.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const product = getDailyFinanceProduct(productCode);
+    const pricing = calculateDailyFinancePricing(productCode, quantity);
+
+    if (!product || !pricing.product) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "That item is not supported in daily finances.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const { error } = await supabase
+      .from("daily_finance_sales")
+      .update({
+        product_code: product.code,
+        product_name: product.name,
+        category: product.category,
+        quantity: pricing.quantity,
+        unit_price: pricing.unitPrice,
+        total: pricing.total,
+        payment_method: paymentMethod,
+        sale_date: saleDate,
+      })
+      .eq("id", saleId);
+
+    if (error) {
+      throw error;
+    }
+
+    const [items, recentItems] = await Promise.all([
+      loadSalesByDate(supabase, saleDate),
+      loadRecentSales(supabase),
+    ]);
+
+    return NextResponse.json({
+      saved: true,
+      message: `${product.name} sale updated successfully.`,
+      saleDate,
+      items,
+      summary: summarizeDailyFinanceSales(items),
+      history: summarizeDailyFinanceHistory(recentItems),
+      pricing,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: error.message || "Unable to update the sale.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        deleted: false,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const supabase = createServerSupabaseClient();
+
+  if (!supabase) {
+    return NextResponse.json(
+      {
+        deleted: false,
+        message:
+          "Supabase finance access is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to update daily finances.",
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const saleId = searchParams.get("saleId");
+    const saleDate = searchParams.get("saleDate") || getJohannesburgDateString();
+
+    if (!saleId) {
+      return NextResponse.json(
+        {
+          deleted: false,
+          message: "Choose the sale you want to delete first.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const { error } = await supabase.from("daily_finance_sales").delete().eq("id", saleId);
+
+    if (error) {
+      throw error;
+    }
+
+    const [items, recentItems] = await Promise.all([
+      loadSalesByDate(supabase, saleDate),
+      loadRecentSales(supabase),
+    ]);
+
+    return NextResponse.json({
+      deleted: true,
+      message: "Sale deleted successfully.",
+      saleDate,
+      items,
+      summary: summarizeDailyFinanceSales(items),
+      history: summarizeDailyFinanceHistory(recentItems),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        deleted: false,
+        message: error.message || "Unable to delete the sale.",
       },
       { status: 500 },
     );

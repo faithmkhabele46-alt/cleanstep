@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatCurrency } from "../lib/booking";
+import { addDaysToDateString } from "../lib/daily-finances";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Cash" },
@@ -43,12 +44,14 @@ export default function DailyFinancesAdmin() {
       totalUnits: 0,
       productTotals: [],
     },
+    history: [],
   });
   const [saleForm, setSaleForm] = useState({
     productCode: "",
     quantity: 1,
     paymentMethod: "cash",
   });
+  const [editingSaleId, setEditingSaleId] = useState("");
   const [submitState, setSubmitState] = useState({
     loading: false,
     error: "",
@@ -82,6 +85,7 @@ export default function DailyFinancesAdmin() {
             totalUnits: 0,
             productTotals: [],
           },
+          history: data.history || [],
         });
 
         setSaleForm((current) => ({
@@ -107,6 +111,7 @@ export default function DailyFinancesAdmin() {
             totalUnits: 0,
             productTotals: [],
           },
+          history: [],
         });
       }
     }
@@ -151,6 +156,7 @@ export default function DailyFinancesAdmin() {
           totalUnits: 0,
           productTotals: [],
         },
+        history: data.history || [],
       });
     } catch (error) {
       setFinanceState((current) => ({
@@ -165,6 +171,7 @@ export default function DailyFinancesAdmin() {
           totalUnits: 0,
           productTotals: [],
         },
+        history: [],
       }));
     }
   }
@@ -209,6 +216,36 @@ export default function DailyFinancesAdmin() {
     }));
   }
 
+  function loadSaleIntoEditor(item) {
+    setEditingSaleId(item.id);
+    setSaleForm({
+      productCode: item.productCode,
+      quantity: item.quantity,
+      paymentMethod: item.paymentMethod,
+    });
+    if (item.saleDate && item.saleDate !== financeState.saleDate) {
+      handleSaleDateChange(item.saleDate);
+    }
+    setSubmitState({
+      loading: false,
+      error: "",
+      success: `Editing ${item.productName}. Save to update it.`,
+    });
+  }
+
+  function resetEditor() {
+    setEditingSaleId("");
+    setSaleForm((current) => ({
+      ...current,
+      quantity: 1,
+    }));
+    setSubmitState({
+      loading: false,
+      error: "",
+      success: "",
+    });
+  }
+
   function changeQuantity(nextValue) {
     setSaleForm((current) => ({
       ...current,
@@ -239,11 +276,12 @@ export default function DailyFinancesAdmin() {
 
     try {
       const response = await fetch("/api/admin/daily-finances", {
-        method: "POST",
+        method: editingSaleId ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          saleId: editingSaleId,
           productCode: saleForm.productCode,
           quantity: saleForm.quantity,
           paymentMethod: saleForm.paymentMethod,
@@ -260,20 +298,71 @@ export default function DailyFinancesAdmin() {
         ...current,
         items: data.items || [],
         summary: data.summary || current.summary,
+        history: data.history || current.history,
       }));
       setSaleForm((current) => ({
         ...current,
         quantity: 1,
       }));
+      setEditingSaleId("");
       setSubmitState({
         loading: false,
         error: "",
-        success: data.message || "Sale saved successfully.",
+        success: data.message || (editingSaleId ? "Sale updated successfully." : "Sale saved successfully."),
       });
     } catch (error) {
       setSubmitState({
         loading: false,
         error: error.message || "Unable to save the sale.",
+        success: "",
+      });
+    }
+  }
+
+  async function handleDeleteSale(item) {
+    const confirmed = window.confirm(`Delete ${item.productName} from ${item.saleDate}?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmitState({
+      loading: true,
+      error: "",
+      success: "",
+    });
+
+    try {
+      const response = await fetch(
+        `/api/admin/daily-finances?saleId=${encodeURIComponent(item.id)}&saleDate=${encodeURIComponent(financeState.saleDate)}`,
+        {
+          method: "DELETE",
+        },
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to delete the sale.");
+      }
+
+      setFinanceState((current) => ({
+        ...current,
+        items: data.items || [],
+        summary: data.summary || current.summary,
+        history: data.history || current.history,
+      }));
+      if (editingSaleId === item.id) {
+        setEditingSaleId("");
+      }
+      setSubmitState({
+        loading: false,
+        error: "",
+        success: data.message || "Sale deleted successfully.",
+      });
+    } catch (error) {
+      setSubmitState({
+        loading: false,
+        error: error.message || "Unable to delete the sale.",
         success: "",
       });
     }
@@ -314,6 +403,11 @@ export default function DailyFinancesAdmin() {
                   <p className="mt-2 text-lg font-semibold text-[#3f363a]">
                     Trading date: {financeState.saleDate || "Today"}
                   </p>
+                  {editingSaleId && (
+                    <p className="mt-2 text-sm font-semibold text-[#e1251b]">
+                      You are editing an existing sale.
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-full border border-[#1f4b8f]/12 bg-white px-4 py-2 text-sm font-semibold text-[#1f4b8f]">
                   {selectedProduct ? selectedProduct.category : "Choose item"}
@@ -331,6 +425,22 @@ export default function DailyFinancesAdmin() {
                   onChange={(event) => handleSaleDateChange(event.target.value)}
                   className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
                 />
+                <div className="mt-3 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSaleDateChange(addDaysToDateString(financeState.saleDate, -1))}
+                    className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+                  >
+                    Previous day
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaleDateChange(addDaysToDateString(financeState.saleDate, 1))}
+                    className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+                  >
+                    Next day
+                  </button>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -434,8 +544,17 @@ export default function DailyFinancesAdmin() {
                 onClick={handleSaveSale}
                 className="mt-5 w-full rounded-2xl bg-[#1f4b8f] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#173a70] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#8c8488]"
               >
-                {submitState.loading ? "Saving sale..." : "Save sale"}
+                {submitState.loading ? "Saving sale..." : editingSaleId ? "Update sale" : "Save sale"}
               </button>
+              {editingSaleId && (
+                <button
+                  type="button"
+                  onClick={resetEditor}
+                  className="mt-3 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+                >
+                  Cancel editing
+                </button>
+              )}
 
               {submitState.error && (
                 <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
@@ -450,6 +569,37 @@ export default function DailyFinancesAdmin() {
             </div>
 
             <div className="space-y-6">
+              <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
+                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Recent day totals</p>
+                {financeState.history?.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {financeState.history.slice(0, 7).map((entry) => (
+                      <button
+                        key={entry.saleDate}
+                        type="button"
+                        onClick={() => handleSaleDateChange(entry.saleDate)}
+                        className={classNames(
+                          "flex w-full items-center justify-between rounded-2xl border px-4 py-4 text-left transition",
+                          financeState.saleDate === entry.saleDate
+                            ? "border-[#1f4b8f] bg-[#eef4ff]"
+                            : "border-[#1f4b8f]/10 bg-white hover:bg-[#fdfefe]",
+                        )}
+                      >
+                        <div>
+                          <p className="font-semibold text-[#3f363a]">{entry.saleDate}</p>
+                          <p className="mt-1 text-sm text-[#7b7276]">
+                            {entry.totalTransactions} sale{entry.totalTransactions === 1 ? "" : "s"} • {entry.totalUnits} unit{entry.totalUnits === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <p className="font-semibold text-[#1f4b8f]">{formatCurrency(entry.totalSales)}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-[#7b7276]">No finance history recorded yet.</p>
+                )}
+              </div>
+
               <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
                 <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Today by item</p>
                 {financeState.summary.productTotals?.length > 0 ? (
@@ -491,15 +641,31 @@ export default function DailyFinancesAdmin() {
                               {item.saleDate}
                             </p>
                           </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-[#1f4b8f]">{formatCurrency(item.total)}</p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#7b7276]">
-                              {item.paymentMethod}
-                            </p>
-                          </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-[#1f4b8f]">{formatCurrency(item.total)}</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#7b7276]">
+                            {item.paymentMethod}
+                          </p>
                         </div>
                       </div>
-                    ))}
+                      <div className="mt-3 flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => loadSaleIntoEditor(item)}
+                          className="rounded-full border border-[#1f4b8f]/12 bg-[#eef4ff] px-3 py-1 text-xs font-semibold text-[#1f4b8f] hover:bg-[#ddeaff]"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSale(item)}
+                          className="rounded-full border border-[#e1251b]/16 bg-[#fff3f2] px-3 py-1 text-xs font-semibold text-[#e1251b] hover:bg-[#ffe7e4]"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                   </div>
                 ) : (
                   <p className="mt-4 text-sm text-[#7b7276]">Nothing has been sold yet today.</p>

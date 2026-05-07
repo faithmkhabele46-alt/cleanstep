@@ -77,6 +77,23 @@ export function getJohannesburgDateString(date = new Date()) {
   return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
+export function addDaysToDateString(dateString = "", dayOffset = 0) {
+  if (!dateString) {
+    return getJohannesburgDateString();
+  }
+
+  const [year, month, day] = String(dateString).split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return getJohannesburgDateString();
+  }
+
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+  utcDate.setUTCDate(utcDate.getUTCDate() + dayOffset);
+
+  return utcDate.toISOString().slice(0, 10);
+}
+
 export function calculateDailyFinancePricing(productCode = "", quantity = 1) {
   const product = getDailyFinanceProduct(productCode);
   const safeQuantity = Math.max(1, Number(quantity) || 1);
@@ -150,4 +167,44 @@ export function summarizeDailyFinanceSales(items = []) {
       a.productName.localeCompare(b.productName),
     ),
   };
+}
+
+export function summarizeDailyFinanceHistory(items = []) {
+  const byDate = new Map();
+
+  items.forEach((item) => {
+    const saleDate = item.saleDate || "";
+    const total = Number(item.total || 0);
+    const quantity = Number(item.quantity || 0);
+
+    if (!saleDate) {
+      return;
+    }
+
+    if (!byDate.has(saleDate)) {
+      byDate.set(saleDate, {
+        saleDate,
+        totalSales: 0,
+        cashTotal: 0,
+        cardTotal: 0,
+        totalUnits: 0,
+        totalTransactions: 0,
+      });
+    }
+
+    const current = byDate.get(saleDate);
+    current.totalSales += total;
+    current.totalUnits += quantity;
+    current.totalTransactions += 1;
+
+    if (item.paymentMethod === "cash") {
+      current.cashTotal += total;
+    }
+
+    if (item.paymentMethod === "card") {
+      current.cardTotal += total;
+    }
+  });
+
+  return Array.from(byDate.values()).sort((a, b) => b.saleDate.localeCompare(a.saleDate));
 }
