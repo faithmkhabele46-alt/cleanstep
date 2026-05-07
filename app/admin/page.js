@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import DailyFinancesAdmin from "../components/DailyFinancesAdmin";
 import { formatCurrency } from "../lib/booking";
 import { formatLoyaltyPoints, getLoyaltyVisitPoints } from "../lib/loyalty";
 
@@ -1081,6 +1082,8 @@ export default function AdminPage() {
               )}
             </section>
           </div>
+
+          <DailyFinancesAdmin />
 
           <div className="mt-10 border-t border-white/10 pt-8">
             <div>
