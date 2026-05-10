@@ -460,7 +460,7 @@ export default function DailyFinancesAdmin() {
                     <p className="mt-1 text-sm text-[#5c5357]">
                       {formatCurrency(product.basePrice)} each
                       {product.bulkPrice
-                        ? ` • Over ${product.bulkThreshold} = ${formatCurrency(product.bulkPrice)} each`
+                        ? ` - Over ${product.bulkThreshold} = ${formatCurrency(product.bulkPrice)} each`
                         : ""}
                     </p>
                   </button>
@@ -530,7 +530,7 @@ export default function DailyFinancesAdmin() {
                 </p>
                 <p className="mt-2 text-sm text-[#5c5357]">
                   Unit price: {formatCurrency(livePricing.unitPrice)}
-                  {livePricing.isBulkPrice ? " • Bulk price applied" : ""}
+                  {livePricing.isBulkPrice ? " - Bulk price applied" : ""}
                 </p>
                 <p className="mt-2 text-sm text-[#5c5357]">Payment: {saleForm.paymentMethod}</p>
                 <p className="mt-4 text-3xl font-semibold text-[#1f4b8f]">
@@ -588,7 +588,7 @@ export default function DailyFinancesAdmin() {
                         <div>
                           <p className="font-semibold text-[#3f363a]">{entry.saleDate}</p>
                           <p className="mt-1 text-sm text-[#7b7276]">
-                            {entry.totalTransactions} sale{entry.totalTransactions === 1 ? "" : "s"} • {entry.totalUnits} unit{entry.totalUnits === 1 ? "" : "s"}
+                            {entry.totalTransactions} sale{entry.totalTransactions === 1 ? "" : "s"} - {entry.totalUnits} unit{entry.totalUnits === 1 ? "" : "s"}
                           </p>
                         </div>
                         <p className="font-semibold text-[#1f4b8f]">{formatCurrency(entry.totalSales)}</p>
