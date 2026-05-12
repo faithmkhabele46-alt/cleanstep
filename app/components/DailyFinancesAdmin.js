@@ -13,6 +13,27 @@ function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
+function formatTransactionTimestamp(createdAt = "", saleDate = "") {
+  if (!createdAt) {
+    return saleDate || "";
+  }
+
+  const parsed = new Date(createdAt);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return saleDate || "";
+  }
+
+  const timeLabel = parsed.toLocaleTimeString("en-ZA", {
+    timeZone: "Africa/Johannesburg",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  return saleDate ? `${saleDate} at ${timeLabel}` : timeLabel;
+}
+
 function SummaryStat({ label, value, accent = "blue" }) {
   const accentClass =
     accent === "red"
@@ -193,7 +214,7 @@ export default function DailyFinancesAdmin() {
     const quantity = Math.max(1, Number(saleForm.quantity) || 1);
     const isBulkPrice =
       Number.isFinite(selectedProduct.bulkThreshold) &&
-      quantity > selectedProduct.bulkThreshold &&
+      quantity >= selectedProduct.bulkThreshold &&
       Number.isFinite(selectedProduct.bulkPrice);
     const unitPrice = isBulkPrice ? selectedProduct.bulkPrice : selectedProduct.basePrice;
 
@@ -638,7 +659,7 @@ export default function DailyFinancesAdmin() {
                               {item.quantity} x {formatCurrency(item.unitPrice)}
                             </p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#9aa2b4]">
-                              {item.saleDate}
+                              {formatTransactionTimestamp(item.createdAt, item.saleDate)}
                             </p>
                           </div>
                         <div className="text-right">

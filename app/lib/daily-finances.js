@@ -34,6 +34,20 @@ export const DAILY_FINANCE_PRODUCTS = [
     basePrice: 8,
   },
   {
+    code: "envelopes",
+    name: "Envelopes",
+    shortName: "Envelopes",
+    category: "Shop items",
+    basePrice: 10,
+  },
+  {
+    code: "cv",
+    name: "CV",
+    shortName: "CV",
+    category: "Services",
+    basePrice: 30,
+  },
+  {
     code: "water",
     name: "Water",
     shortName: "Water",
@@ -110,7 +124,7 @@ export function calculateDailyFinancePricing(productCode = "", quantity = 1) {
 
   const isBulkPrice =
     Number.isFinite(product.bulkThreshold) &&
-    safeQuantity > product.bulkThreshold &&
+    safeQuantity >= product.bulkThreshold &&
     Number.isFinite(product.bulkPrice);
   const unitPrice = isBulkPrice ? product.bulkPrice : product.basePrice;
 
