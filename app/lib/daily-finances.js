@@ -211,7 +211,7 @@ export function summarizeDailyFinanceHistory(items = []) {
     const saleDate = item.saleDate || "";
     const total = Number(item.total || 0);
     const quantity = Number(item.quantity || 0);
-    const transactionKey = item.transactionGroupId || item.id;
+    const transactionKey = item.createdAt || item.transactionGroupId || item.id;
 
     if (!saleDate) {
       return;

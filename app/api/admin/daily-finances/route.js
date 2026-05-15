@@ -14,7 +14,7 @@ async function loadSalesByDate(supabase, saleDate) {
   const { data, error } = await supabase
     .from("daily_finance_sales")
     .select(
-      "id, transaction_group_id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
     )
     .eq("sale_date", saleDate)
     .order("created_at", { ascending: false });
@@ -25,7 +25,6 @@ async function loadSalesByDate(supabase, saleDate) {
 
   return (data || []).map((item) => ({
     id: item.id,
-    transactionGroupId: item.transaction_group_id,
     productCode: item.product_code,
     productName: item.product_name,
     category: item.category,
@@ -42,7 +41,7 @@ async function loadRecentSales(supabase) {
   const { data, error } = await supabase
     .from("daily_finance_sales")
     .select(
-      "id, transaction_group_id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
     )
     .order("sale_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -54,7 +53,6 @@ async function loadRecentSales(supabase) {
 
   return (data || []).map((item) => ({
     id: item.id,
-    transactionGroupId: item.transaction_group_id,
     productCode: item.product_code,
     productName: item.product_name,
     category: item.category,
@@ -190,7 +188,7 @@ export async function POST(request) {
       );
     }
 
-    const transactionGroupId = crypto.randomUUID();
+    const transactionCreatedAt = new Date().toISOString();
     const preparedLines = [];
 
     for (const line of lines) {
@@ -221,7 +219,6 @@ export async function POST(request) {
       }
 
       preparedLines.push({
-        transaction_group_id: transactionGroupId,
         product_code: pricing.product.code,
         product_name: line.customLabel?.trim() || pricing.product.name,
         category: pricing.product.category,
@@ -230,6 +227,7 @@ export async function POST(request) {
         total: pricing.total,
         payment_method: paymentMethod,
         sale_date: saleDate,
+        created_at: transactionCreatedAt,
       });
     }
 
@@ -237,7 +235,7 @@ export async function POST(request) {
       .from("daily_finance_sales")
       .insert(preparedLines)
       .select(
-        "id, transaction_group_id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+        "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
       );
 
     if (error) {
@@ -254,7 +252,6 @@ export async function POST(request) {
       message: `Transaction saved successfully with ${preparedLines.length} item${preparedLines.length === 1 ? "" : "s"}.`,
       itemsSaved: (savedSales || []).map((savedSale) => ({
         id: savedSale.id,
-        transactionGroupId: savedSale.transaction_group_id,
         productCode: savedSale.product_code,
         productName: savedSale.product_name,
         category: savedSale.category,
@@ -406,10 +403,10 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const saleId = searchParams.get("saleId");
-    const transactionGroupId = searchParams.get("transactionGroupId");
+    const createdAt = searchParams.get("createdAt");
     const saleDate = searchParams.get("saleDate") || getJohannesburgDateString();
 
-    if (!saleId && !transactionGroupId) {
+    if (!saleId && !createdAt) {
       return NextResponse.json(
         {
           deleted: false,
@@ -421,8 +418,8 @@ export async function DELETE(request) {
 
     let deleteQuery = supabase.from("daily_finance_sales").delete();
 
-    if (transactionGroupId) {
-      deleteQuery = deleteQuery.eq("transaction_group_id", transactionGroupId);
+    if (createdAt) {
+      deleteQuery = deleteQuery.eq("created_at", createdAt);
     } else {
       deleteQuery = deleteQuery.eq("id", saleId);
     }

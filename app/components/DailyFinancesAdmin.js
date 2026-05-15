@@ -41,7 +41,7 @@ function buildTransactions(items = []) {
   const grouped = new Map();
 
   items.forEach((item) => {
-    const key = item.transactionGroupId || item.id;
+    const key = item.createdAt || item.transactionGroupId || item.id;
 
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -425,7 +425,7 @@ export default function DailyFinancesAdmin() {
       });
 
       if (transaction.id) {
-        params.set("transactionGroupId", transaction.id);
+        params.set("createdAt", transaction.id);
       } else if (transaction.fallbackSaleId) {
         params.set("saleId", transaction.fallbackSaleId);
       }
