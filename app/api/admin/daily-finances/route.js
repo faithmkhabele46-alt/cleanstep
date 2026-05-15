@@ -14,7 +14,7 @@ async function loadSalesByDate(supabase, saleDate) {
   const { data, error } = await supabase
     .from("daily_finance_sales")
     .select(
-      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      "id, transaction_group_id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
     )
     .eq("sale_date", saleDate)
     .order("created_at", { ascending: false });
@@ -25,6 +25,7 @@ async function loadSalesByDate(supabase, saleDate) {
 
   return (data || []).map((item) => ({
     id: item.id,
+    transactionGroupId: item.transaction_group_id,
     productCode: item.product_code,
     productName: item.product_name,
     category: item.category,
@@ -41,7 +42,7 @@ async function loadRecentSales(supabase) {
   const { data, error } = await supabase
     .from("daily_finance_sales")
     .select(
-      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      "id, transaction_group_id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
     )
     .order("sale_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -53,6 +54,7 @@ async function loadRecentSales(supabase) {
 
   return (data || []).map((item) => ({
     id: item.id,
+    transactionGroupId: item.transaction_group_id,
     productCode: item.product_code,
     productName: item.product_name,
     category: item.category,
@@ -154,16 +156,15 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
-    const productCode = body.productCode;
     const paymentMethod = body.paymentMethod;
     const saleDate = body.saleDate || getJohannesburgDateString();
-    const quantity = Math.max(1, Number(body.quantity) || 1);
+    const lines = Array.isArray(body.lines) ? body.lines : [];
 
-    if (!productCode || !paymentMethod) {
+    if (!paymentMethod) {
       return NextResponse.json(
         {
           saved: false,
-          message: "Choose the product and payment method first.",
+          message: "Choose the payment method first.",
         },
         { status: 400 },
       );
@@ -179,34 +180,65 @@ export async function POST(request) {
       );
     }
 
-    const pricing = calculateDailyFinancePricing(productCode, quantity);
-
-    if (!pricing.product) {
+    if (lines.length === 0) {
       return NextResponse.json(
         {
           saved: false,
-          message: "That item is not supported in daily finances.",
+          message: "Add at least one item to the transaction first.",
         },
         { status: 400 },
       );
     }
 
-    const { data: savedSale, error } = await supabase
-      .from("daily_finance_sales")
-      .insert({
+    const transactionGroupId = crypto.randomUUID();
+    const preparedLines = [];
+
+    for (const line of lines) {
+      const pricing = calculateDailyFinancePricing(
+        line.productCode,
+        line.quantity,
+        line.customAmount,
+      );
+
+      if (!pricing.product) {
+        return NextResponse.json(
+          {
+            saved: false,
+            message: "One of the selected items is not supported in daily finances.",
+          },
+          { status: 400 },
+        );
+      }
+
+      if (pricing.product.allowsCustomAmount && pricing.unitPrice <= 0) {
+        return NextResponse.json(
+          {
+            saved: false,
+            message: "Others needs a valid amount before you can save the transaction.",
+          },
+          { status: 400 },
+        );
+      }
+
+      preparedLines.push({
+        transaction_group_id: transactionGroupId,
         product_code: pricing.product.code,
-        product_name: pricing.product.name,
+        product_name: line.customLabel?.trim() || pricing.product.name,
         category: pricing.product.category,
         quantity: pricing.quantity,
         unit_price: pricing.unitPrice,
         total: pricing.total,
         payment_method: paymentMethod,
         sale_date: saleDate,
-      })
+      });
+    }
+
+    const { data: savedSales, error } = await supabase
+      .from("daily_finance_sales")
+      .insert(preparedLines)
       .select(
-        "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
-      )
-      .single();
+        "id, transaction_group_id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      );
 
     if (error) {
       throw error;
@@ -219,9 +251,10 @@ export async function POST(request) {
 
     return NextResponse.json({
       saved: true,
-      message: `${pricing.product.name} sale saved successfully.`,
-      item: {
+      message: `Transaction saved successfully with ${preparedLines.length} item${preparedLines.length === 1 ? "" : "s"}.`,
+      itemsSaved: (savedSales || []).map((savedSale) => ({
         id: savedSale.id,
+        transactionGroupId: savedSale.transaction_group_id,
         productCode: savedSale.product_code,
         productName: savedSale.product_name,
         category: savedSale.category,
@@ -231,12 +264,11 @@ export async function POST(request) {
         paymentMethod: savedSale.payment_method,
         saleDate: savedSale.sale_date,
         createdAt: savedSale.created_at,
-      },
+      })),
       saleDate,
       items,
       summary: summarizeDailyFinanceSales(items),
       history: summarizeDailyFinanceHistory(recentItems),
-      pricing,
     });
   } catch (error) {
     return NextResponse.json(
@@ -374,19 +406,28 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const saleId = searchParams.get("saleId");
+    const transactionGroupId = searchParams.get("transactionGroupId");
     const saleDate = searchParams.get("saleDate") || getJohannesburgDateString();
 
-    if (!saleId) {
+    if (!saleId && !transactionGroupId) {
       return NextResponse.json(
         {
           deleted: false,
-          message: "Choose the sale you want to delete first.",
+          message: "Choose the transaction you want to delete first.",
         },
         { status: 400 },
       );
     }
 
-    const { error } = await supabase.from("daily_finance_sales").delete().eq("id", saleId);
+    let deleteQuery = supabase.from("daily_finance_sales").delete();
+
+    if (transactionGroupId) {
+      deleteQuery = deleteQuery.eq("transaction_group_id", transactionGroupId);
+    } else {
+      deleteQuery = deleteQuery.eq("id", saleId);
+    }
+
+    const { error } = await deleteQuery;
 
     if (error) {
       throw error;

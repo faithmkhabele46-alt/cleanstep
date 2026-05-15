@@ -48,6 +48,14 @@ export const DAILY_FINANCE_PRODUCTS = [
     basePrice: 30,
   },
   {
+    code: "others",
+    name: "Others",
+    shortName: "Others",
+    category: "Custom",
+    basePrice: 0,
+    allowsCustomAmount: true,
+  },
+  {
     code: "water",
     name: "Water",
     shortName: "Water",
@@ -108,9 +116,10 @@ export function addDaysToDateString(dateString = "", dayOffset = 0) {
   return utcDate.toISOString().slice(0, 10);
 }
 
-export function calculateDailyFinancePricing(productCode = "", quantity = 1) {
+export function calculateDailyFinancePricing(productCode = "", quantity = 1, customAmount = 0) {
   const product = getDailyFinanceProduct(productCode);
   const safeQuantity = Math.max(1, Number(quantity) || 1);
+  const safeCustomAmount = Math.max(0, Number(customAmount) || 0);
 
   if (!product) {
     return {
@@ -118,6 +127,16 @@ export function calculateDailyFinancePricing(productCode = "", quantity = 1) {
       quantity: safeQuantity,
       unitPrice: 0,
       total: 0,
+      isBulkPrice: false,
+    };
+  }
+
+  if (product.allowsCustomAmount) {
+    return {
+      product,
+      quantity: safeQuantity,
+      unitPrice: safeCustomAmount,
+      total: safeCustomAmount * safeQuantity,
       isBulkPrice: false,
     };
   }
@@ -150,6 +169,7 @@ export function summarizeDailyFinanceSales(items = []) {
     const total = Number(item.total || 0);
     const quantity = Number(item.quantity || 0);
     const code = item.productCode || "";
+    const summaryKey = `${code}:${item.productName || code}`;
 
     summary.totalSales += total;
     summary.totalUnits += quantity;
@@ -162,8 +182,8 @@ export function summarizeDailyFinanceSales(items = []) {
       summary.cardTotal += total;
     }
 
-    if (!summary.productTotals[code]) {
-      summary.productTotals[code] = {
+    if (!summary.productTotals[summaryKey]) {
+      summary.productTotals[summaryKey] = {
         productCode: code,
         productName: item.productName || code,
         quantity: 0,
@@ -171,8 +191,8 @@ export function summarizeDailyFinanceSales(items = []) {
       };
     }
 
-    summary.productTotals[code].quantity += quantity;
-    summary.productTotals[code].total += total;
+    summary.productTotals[summaryKey].quantity += quantity;
+    summary.productTotals[summaryKey].total += total;
   });
 
   return {
@@ -185,11 +205,13 @@ export function summarizeDailyFinanceSales(items = []) {
 
 export function summarizeDailyFinanceHistory(items = []) {
   const byDate = new Map();
+  const countedTransactions = new Set();
 
   items.forEach((item) => {
     const saleDate = item.saleDate || "";
     const total = Number(item.total || 0);
     const quantity = Number(item.quantity || 0);
+    const transactionKey = item.transactionGroupId || item.id;
 
     if (!saleDate) {
       return;
@@ -209,7 +231,10 @@ export function summarizeDailyFinanceHistory(items = []) {
     const current = byDate.get(saleDate);
     current.totalSales += total;
     current.totalUnits += quantity;
-    current.totalTransactions += 1;
+    if (transactionKey && !countedTransactions.has(`${saleDate}:${transactionKey}`)) {
+      current.totalTransactions += 1;
+      countedTransactions.add(`${saleDate}:${transactionKey}`);
+    }
 
     if (item.paymentMethod === "cash") {
       current.cashTotal += total;

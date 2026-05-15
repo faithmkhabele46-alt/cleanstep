@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatCurrency } from "../lib/booking";
-import { addDaysToDateString } from "../lib/daily-finances";
+import {
+  addDaysToDateString,
+  calculateDailyFinancePricing,
+} from "../lib/daily-finances";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Cash" },
@@ -32,6 +35,36 @@ function formatTransactionTimestamp(createdAt = "", saleDate = "") {
   });
 
   return saleDate ? `${saleDate} at ${timeLabel}` : timeLabel;
+}
+
+function buildTransactions(items = []) {
+  const grouped = new Map();
+
+  items.forEach((item) => {
+    const key = item.transactionGroupId || item.id;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: key,
+        saleDate: item.saleDate,
+        createdAt: item.createdAt,
+        paymentMethod: item.paymentMethod,
+        total: 0,
+        lines: [],
+        fallbackSaleId: item.id,
+      });
+    }
+
+    const current = grouped.get(key);
+    current.total += Number(item.total || 0);
+    current.lines.push(item);
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    const aTime = new Date(a.createdAt || 0).getTime();
+    const bTime = new Date(b.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
 }
 
 function SummaryStat({ label, value, accent = "blue" }) {
@@ -71,8 +104,10 @@ export default function DailyFinancesAdmin() {
     productCode: "",
     quantity: 1,
     paymentMethod: "cash",
+    customAmount: "",
+    customLabel: "",
   });
-  const [editingSaleId, setEditingSaleId] = useState("");
+  const [transactionLines, setTransactionLines] = useState([]);
   const [submitState, setSubmitState] = useState({
     loading: false,
     error: "",
@@ -202,69 +237,40 @@ export default function DailyFinancesAdmin() {
     [financeState.products, saleForm.productCode],
   );
 
-  const livePricing = useMemo(() => {
-    if (!selectedProduct) {
-      return {
-        unitPrice: 0,
-        total: 0,
-        isBulkPrice: false,
-      };
-    }
+  const livePricing = useMemo(
+    () =>
+      calculateDailyFinancePricing(
+        saleForm.productCode,
+        saleForm.quantity,
+        saleForm.customAmount,
+      ),
+    [saleForm.customAmount, saleForm.productCode, saleForm.quantity],
+  );
 
-    const quantity = Math.max(1, Number(saleForm.quantity) || 1);
-    const isBulkPrice =
-      Number.isFinite(selectedProduct.bulkThreshold) &&
-      quantity >= selectedProduct.bulkThreshold &&
-      Number.isFinite(selectedProduct.bulkPrice);
-    const unitPrice = isBulkPrice ? selectedProduct.bulkPrice : selectedProduct.basePrice;
-
+  const transactionTotals = useMemo(() => {
+    const total = transactionLines.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    const totalUnits = transactionLines.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     return {
-      unitPrice,
-      total: quantity * unitPrice,
-      isBulkPrice,
+      total,
+      totalUnits,
     };
-  }, [selectedProduct, saleForm.quantity]);
+  }, [transactionLines]);
+
+  const groupedTransactions = useMemo(() => buildTransactions(financeState.items), [financeState.items]);
 
   function chooseProduct(productCode) {
     setSaleForm((current) => ({
       ...current,
       productCode,
+      quantity: 1,
+      customAmount: "",
+      customLabel: "",
     }));
     setSubmitState((current) => ({
       ...current,
       error: "",
       success: "",
     }));
-  }
-
-  function loadSaleIntoEditor(item) {
-    setEditingSaleId(item.id);
-    setSaleForm({
-      productCode: item.productCode,
-      quantity: item.quantity,
-      paymentMethod: item.paymentMethod,
-    });
-    if (item.saleDate && item.saleDate !== financeState.saleDate) {
-      handleSaleDateChange(item.saleDate);
-    }
-    setSubmitState({
-      loading: false,
-      error: "",
-      success: `Editing ${item.productName}. Save to update it.`,
-    });
-  }
-
-  function resetEditor() {
-    setEditingSaleId("");
-    setSaleForm((current) => ({
-      ...current,
-      quantity: 1,
-    }));
-    setSubmitState({
-      loading: false,
-      error: "",
-      success: "",
-    });
   }
 
   function changeQuantity(nextValue) {
@@ -279,11 +285,66 @@ export default function DailyFinancesAdmin() {
     }));
   }
 
-  async function handleSaveSale() {
-    if (!saleForm.productCode) {
+  function addLineToTransaction() {
+    if (!selectedProduct || !livePricing.product) {
       setSubmitState({
         loading: false,
-        error: "Choose the item you sold first.",
+        error: "Choose the item you want to add first.",
+        success: "",
+      });
+      return;
+    }
+
+    if (selectedProduct.allowsCustomAmount && livePricing.unitPrice <= 0) {
+      setSubmitState({
+        loading: false,
+        error: "Enter the amount for Others before adding it.",
+        success: "",
+      });
+      return;
+    }
+
+    const lineProductName = saleForm.customLabel?.trim() || selectedProduct.name;
+
+    setTransactionLines((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        productCode: selectedProduct.code,
+        productName: lineProductName,
+        quantity: livePricing.quantity,
+        unitPrice: livePricing.unitPrice,
+        total: livePricing.total,
+        customAmount: saleForm.customAmount,
+        customLabel: saleForm.customLabel,
+      },
+    ]);
+    setSaleForm((current) => ({
+      ...current,
+      quantity: 1,
+      customAmount: "",
+      customLabel: "",
+    }));
+    setSubmitState({
+      loading: false,
+      error: "",
+      success: `${lineProductName} added to this transaction.`,
+    });
+  }
+
+  function removeLineFromTransaction(lineId) {
+    setTransactionLines((current) => current.filter((line) => line.id !== lineId));
+    setSubmitState((current) => ({
+      ...current,
+      error: "",
+    }));
+  }
+
+  async function handleSaveTransaction() {
+    if (transactionLines.length === 0) {
+      setSubmitState({
+        loading: false,
+        error: "Add at least one item to this transaction first.",
         success: "",
       });
       return;
@@ -297,14 +358,12 @@ export default function DailyFinancesAdmin() {
 
     try {
       const response = await fetch("/api/admin/daily-finances", {
-        method: editingSaleId ? "PATCH" : "POST",
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          saleId: editingSaleId,
-          productCode: saleForm.productCode,
-          quantity: saleForm.quantity,
+          lines: transactionLines,
           paymentMethod: saleForm.paymentMethod,
           saleDate: financeState.saleDate,
         }),
@@ -312,7 +371,7 @@ export default function DailyFinancesAdmin() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Unable to save the sale.");
+        throw new Error(data.message || "Unable to save the transaction.");
       }
 
       setFinanceState((current) => ({
@@ -321,27 +380,34 @@ export default function DailyFinancesAdmin() {
         summary: data.summary || current.summary,
         history: data.history || current.history,
       }));
+      setTransactionLines([]);
       setSaleForm((current) => ({
         ...current,
         quantity: 1,
+        customAmount: "",
+        customLabel: "",
       }));
-      setEditingSaleId("");
       setSubmitState({
         loading: false,
         error: "",
-        success: data.message || (editingSaleId ? "Sale updated successfully." : "Sale saved successfully."),
+        success: data.message || "Transaction saved successfully.",
       });
     } catch (error) {
       setSubmitState({
         loading: false,
-        error: error.message || "Unable to save the sale.",
+        error: error.message || "Unable to save the transaction.",
         success: "",
       });
     }
   }
 
-  async function handleDeleteSale(item) {
-    const confirmed = window.confirm(`Delete ${item.productName} from ${item.saleDate}?`);
+  async function handleDeleteTransaction(transaction) {
+    const confirmed = window.confirm(
+      `Delete this transaction from ${formatTransactionTimestamp(
+        transaction.createdAt,
+        transaction.saleDate,
+      )}?`,
+    );
 
     if (!confirmed) {
       return;
@@ -354,16 +420,23 @@ export default function DailyFinancesAdmin() {
     });
 
     try {
-      const response = await fetch(
-        `/api/admin/daily-finances?saleId=${encodeURIComponent(item.id)}&saleDate=${encodeURIComponent(financeState.saleDate)}`,
-        {
-          method: "DELETE",
-        },
-      );
+      const params = new URLSearchParams({
+        saleDate: financeState.saleDate,
+      });
+
+      if (transaction.id) {
+        params.set("transactionGroupId", transaction.id);
+      } else if (transaction.fallbackSaleId) {
+        params.set("saleId", transaction.fallbackSaleId);
+      }
+
+      const response = await fetch(`/api/admin/daily-finances?${params.toString()}`, {
+        method: "DELETE",
+      });
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Unable to delete the sale.");
+        throw new Error(data.message || "Unable to delete the transaction.");
       }
 
       setFinanceState((current) => ({
@@ -372,21 +445,161 @@ export default function DailyFinancesAdmin() {
         summary: data.summary || current.summary,
         history: data.history || current.history,
       }));
-      if (editingSaleId === item.id) {
-        setEditingSaleId("");
-      }
       setSubmitState({
         loading: false,
         error: "",
-        success: data.message || "Sale deleted successfully.",
+        success: data.message || "Transaction deleted successfully.",
       });
     } catch (error) {
       setSubmitState({
         loading: false,
-        error: error.message || "Unable to delete the sale.",
+        error: error.message || "Unable to delete the transaction.",
         success: "",
       });
     }
+  }
+
+  function downloadTransactionsCsv() {
+    if (groupedTransactions.length === 0) {
+      setSubmitState({
+        loading: false,
+        error: "There are no transactions to download for this date.",
+        success: "",
+      });
+      return;
+    }
+
+    const rows = [
+      [
+        "Sale Date",
+        "Time",
+        "Payment Method",
+        "Item",
+        "Quantity",
+        "Unit Price",
+        "Line Total",
+        "Transaction Total",
+      ],
+    ];
+
+    groupedTransactions.forEach((transaction) => {
+      const timeOnly = formatTransactionTimestamp(transaction.createdAt, "")
+        .replace(/^.*at /, "")
+        .trim();
+
+      transaction.lines.forEach((line, index) => {
+        rows.push([
+          transaction.saleDate,
+          timeOnly,
+          transaction.paymentMethod,
+          line.productName,
+          String(line.quantity),
+          String(line.unitPrice),
+          String(line.total),
+          index === 0 ? String(transaction.total) : "",
+        ]);
+      });
+    });
+
+    const csv = rows
+      .map((row) =>
+        row
+          .map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`)
+          .join(","),
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cleanstep-daily-finances-${financeState.saleDate || "today"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printDayReport() {
+    if (groupedTransactions.length === 0) {
+      setSubmitState({
+        loading: false,
+        error: "There are no transactions to print for this date.",
+        success: "",
+      });
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "width=900,height=1100");
+
+    if (!printWindow) {
+      setSubmitState({
+        loading: false,
+        error: "Your browser blocked the print window. Please allow pop-ups and try again.",
+        success: "",
+      });
+      return;
+    }
+
+    const transactionMarkup = groupedTransactions
+      .map(
+        (transaction) => `
+          <div style="border:1px solid #dbe4f2;border-radius:16px;padding:16px;margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;gap:16px;">
+              <div>
+                <div style="font-weight:700;color:#3f363a;">${formatTransactionTimestamp(
+                  transaction.createdAt,
+                  transaction.saleDate,
+                )}</div>
+                <div style="margin-top:6px;color:#5c5357;text-transform:capitalize;">${transaction.paymentMethod}</div>
+              </div>
+              <div style="font-weight:700;color:#1f4b8f;">${formatCurrency(transaction.total)}</div>
+            </div>
+            <div style="margin-top:12px;">
+              ${transaction.lines
+                .map(
+                  (line) => `
+                    <div style="display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-top:1px solid #eef3fb;">
+                      <div>${line.productName} (${line.quantity} x ${formatCurrency(line.unitPrice)})</div>
+                      <div>${formatCurrency(line.total)}</div>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+          </div>
+        `,
+      )
+      .join("");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Cleanstep Daily Finances ${financeState.saleDate}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #3f363a; }
+            h1 { color: #1f4b8f; margin-bottom: 8px; }
+            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+            .card { border: 1px solid #dbe4f2; border-radius: 16px; padding: 16px; background: #f8fbff; }
+            .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: #7b7276; }
+            .value { margin-top: 8px; font-size: 24px; font-weight: 700; color: #1f4b8f; }
+          </style>
+        </head>
+        <body>
+          <h1>Cleanstep Daily Finances</h1>
+          <p>Trading date: ${financeState.saleDate}</p>
+          <div class="summary">
+            <div class="card"><div class="label">Total</div><div class="value">${formatCurrency(financeState.summary.totalSales)}</div></div>
+            <div class="card"><div class="label">Cash</div><div class="value">${formatCurrency(financeState.summary.cashTotal)}</div></div>
+            <div class="card"><div class="label">Card</div><div class="value">${formatCurrency(financeState.summary.cardTotal)}</div></div>
+            <div class="card"><div class="label">Units sold</div><div class="value">${financeState.summary.totalUnits}</div></div>
+          </div>
+          <h2>Transactions</h2>
+          ${transactionMarkup}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   return (
@@ -394,7 +607,7 @@ export default function DailyFinancesAdmin() {
       <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">Daily finances</p>
       <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">See what sold today</h2>
       <p className="mt-2 text-sm text-[#5c5357]">
-        Tap the item, choose cash or card, and save the sale. Cleanstep updates the daily totals automatically.
+        Build one customer transaction with several items, then save it once as cash or card.
       </p>
 
       {financeState.loading ? (
@@ -416,19 +629,31 @@ export default function DailyFinancesAdmin() {
             <SummaryStat label="Units sold" value={String(financeState.summary.totalUnits || 0)} />
           </div>
 
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={printDayReport}
+              className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+            >
+              Print daily report
+            </button>
+            <button
+              type="button"
+              onClick={downloadTransactionsCsv}
+              className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
+            >
+              Download CSV
+            </button>
+          </div>
+
           <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
             <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Record new sale</p>
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Record transaction</p>
                   <p className="mt-2 text-lg font-semibold text-[#3f363a]">
                     Trading date: {financeState.saleDate || "Today"}
                   </p>
-                  {editingSaleId && (
-                    <p className="mt-2 text-sm font-semibold text-[#e1251b]">
-                      You are editing an existing sale.
-                    </p>
-                  )}
                 </div>
                 <div className="rounded-full border border-[#1f4b8f]/12 bg-white px-4 py-2 text-sm font-semibold text-[#1f4b8f]">
                   {selectedProduct ? selectedProduct.category : "Choose item"}
@@ -479,14 +704,60 @@ export default function DailyFinancesAdmin() {
                   >
                     <p className="text-sm font-semibold text-[#3f363a]">{product.name}</p>
                     <p className="mt-1 text-sm text-[#5c5357]">
-                      {formatCurrency(product.basePrice)} each
-                      {product.bulkPrice
-                        ? ` - Over ${product.bulkThreshold} = ${formatCurrency(product.bulkPrice)} each`
-                        : ""}
+                      {product.allowsCustomAmount
+                        ? "Enter any amount you charged for this item."
+                        : `${formatCurrency(product.basePrice)} each${
+                            product.bulkPrice
+                              ? ` - From ${product.bulkThreshold} = ${formatCurrency(product.bulkPrice)} each`
+                              : ""
+                          }`}
                     </p>
                   </button>
                 ))}
               </div>
+
+              {selectedProduct?.allowsCustomAmount && (
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-semibold text-[#3f363a]" htmlFor="customAmount">
+                      Amount charged
+                    </label>
+                    <input
+                      id="customAmount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={saleForm.customAmount}
+                      onChange={(event) =>
+                        setSaleForm((current) => ({
+                          ...current,
+                          customAmount: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                      placeholder="e.g. 25"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-[#3f363a]" htmlFor="customLabel">
+                      What was sold? (optional)
+                    </label>
+                    <input
+                      id="customLabel"
+                      type="text"
+                      value={saleForm.customLabel}
+                      onChange={(event) =>
+                        setSaleForm((current) => ({
+                          ...current,
+                          customLabel: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                      placeholder="e.g. Lamination"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <div>
@@ -545,9 +816,9 @@ export default function DailyFinancesAdmin() {
               </div>
 
               <div className="mt-5 rounded-3xl border border-[#1f4b8f]/12 bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Sale preview</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Current item preview</p>
                 <p className="mt-3 text-lg font-semibold text-[#3f363a]">
-                  {selectedProduct ? selectedProduct.name : "Choose an item"}
+                  {saleForm.customLabel?.trim() || selectedProduct?.name || "Choose an item"}
                 </p>
                 <p className="mt-2 text-sm text-[#5c5357]">
                   Unit price: {formatCurrency(livePricing.unitPrice)}
@@ -562,20 +833,71 @@ export default function DailyFinancesAdmin() {
               <button
                 type="button"
                 disabled={submitState.loading || !financeState.configured}
-                onClick={handleSaveSale}
+                onClick={addLineToTransaction}
+                className="mt-5 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f2f4f8] disabled:text-[#8c8488]"
+              >
+                Add item to this transaction
+              </button>
+
+              <div className="mt-5 rounded-3xl border border-[#1f4b8f]/12 bg-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Current transaction</p>
+                    <p className="mt-2 text-lg font-semibold text-[#3f363a]">
+                      {transactionLines.length} item{transactionLines.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Transaction total</p>
+                    <p className="mt-2 text-2xl font-semibold text-[#1f4b8f]">
+                      {formatCurrency(transactionTotals.total)}
+                    </p>
+                  </div>
+                </div>
+
+                {transactionLines.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {transactionLines.map((line) => (
+                      <div
+                        key={line.id}
+                        className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-[#3f363a]">{line.productName}</p>
+                            <p className="mt-1 text-sm text-[#5c5357]">
+                              {line.quantity} x {formatCurrency(line.unitPrice)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-[#1f4b8f]">{formatCurrency(line.total)}</p>
+                            <button
+                              type="button"
+                              onClick={() => removeLineFromTransaction(line.id)}
+                              className="mt-2 rounded-full border border-[#e1251b]/16 bg-[#fff3f2] px-3 py-1 text-xs font-semibold text-[#e1251b] hover:bg-[#ffe7e4]"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-[#7b7276]">
+                    Add copies, water, pens, Others, or anything else before saving the whole transaction.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={submitState.loading || !financeState.configured}
+                onClick={handleSaveTransaction}
                 className="mt-5 w-full rounded-2xl bg-[#1f4b8f] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#173a70] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#8c8488]"
               >
-                {submitState.loading ? "Saving sale..." : editingSaleId ? "Update sale" : "Save sale"}
+                {submitState.loading ? "Saving transaction..." : "Save transaction"}
               </button>
-              {editingSaleId && (
-                <button
-                  type="button"
-                  onClick={resetEditor}
-                  className="mt-3 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff]"
-                >
-                  Cancel editing
-                </button>
-              )}
 
               {submitState.error && (
                 <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
@@ -609,7 +931,7 @@ export default function DailyFinancesAdmin() {
                         <div>
                           <p className="font-semibold text-[#3f363a]">{entry.saleDate}</p>
                           <p className="mt-1 text-sm text-[#7b7276]">
-                            {entry.totalTransactions} sale{entry.totalTransactions === 1 ? "" : "s"} - {entry.totalUnits} unit{entry.totalUnits === 1 ? "" : "s"}
+                            {entry.totalTransactions} transaction{entry.totalTransactions === 1 ? "" : "s"} - {entry.totalUnits} unit{entry.totalUnits === 1 ? "" : "s"}
                           </p>
                         </div>
                         <p className="font-semibold text-[#1f4b8f]">{formatCurrency(entry.totalSales)}</p>
@@ -627,7 +949,7 @@ export default function DailyFinancesAdmin() {
                   <div className="mt-4 space-y-3">
                     {financeState.summary.productTotals.map((item) => (
                       <div
-                        key={item.productCode}
+                        key={`${item.productCode}:${item.productName}`}
                         className="flex items-center justify-between rounded-2xl border border-[#1f4b8f]/10 bg-white px-4 py-3"
                       >
                         <div>
@@ -644,49 +966,54 @@ export default function DailyFinancesAdmin() {
               </div>
 
               <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Recent sales</p>
-                {financeState.items.length > 0 ? (
+                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Recent transactions</p>
+                {groupedTransactions.length > 0 ? (
                   <div className="mt-4 space-y-3">
-                    {financeState.items.slice(0, 12).map((item) => (
+                    {groupedTransactions.slice(0, 12).map((transaction) => (
                       <div
-                        key={item.id}
+                        key={transaction.id}
                         className="rounded-2xl border border-[#1f4b8f]/10 bg-white p-4"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="font-semibold text-[#3f363a]">{item.productName}</p>
-                            <p className="mt-1 text-sm text-[#7b7276]">
-                              {item.quantity} x {formatCurrency(item.unitPrice)}
+                            <p className="font-semibold text-[#3f363a]">
+                              {formatTransactionTimestamp(transaction.createdAt, transaction.saleDate)}
                             </p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#9aa2b4]">
-                              {formatTransactionTimestamp(item.createdAt, item.saleDate)}
+                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#7b7276]">
+                              {transaction.paymentMethod}
                             </p>
                           </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-[#1f4b8f]">{formatCurrency(item.total)}</p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#7b7276]">
-                            {item.paymentMethod}
-                          </p>
+                          <p className="font-semibold text-[#1f4b8f]">{formatCurrency(transaction.total)}</p>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {transaction.lines.map((line) => (
+                            <div
+                              key={line.id}
+                              className="flex items-center justify-between rounded-2xl border border-[#1f4b8f]/8 bg-[#f8fbff] px-3 py-3"
+                            >
+                              <div>
+                                <p className="font-medium text-[#3f363a]">{line.productName}</p>
+                                <p className="mt-1 text-sm text-[#7b7276]">
+                                  {line.quantity} x {formatCurrency(line.unitPrice)}
+                                </p>
+                              </div>
+                              <p className="font-semibold text-[#1f4b8f]">{formatCurrency(line.total)}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTransaction(transaction)}
+                            className="rounded-full border border-[#e1251b]/16 bg-[#fff3f2] px-3 py-1 text-xs font-semibold text-[#e1251b] hover:bg-[#ffe7e4]"
+                          >
+                            Delete transaction
+                          </button>
                         </div>
                       </div>
-                      <div className="mt-3 flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => loadSaleIntoEditor(item)}
-                          className="rounded-full border border-[#1f4b8f]/12 bg-[#eef4ff] px-3 py-1 text-xs font-semibold text-[#1f4b8f] hover:bg-[#ddeaff]"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSale(item)}
-                          className="rounded-full border border-[#e1251b]/16 bg-[#fff3f2] px-3 py-1 text-xs font-semibold text-[#e1251b] hover:bg-[#ffe7e4]"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                   </div>
                 ) : (
                   <p className="mt-4 text-sm text-[#7b7276]">Nothing has been sold yet today.</p>
