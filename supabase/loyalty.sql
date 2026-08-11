@@ -30,5 +30,15 @@ create table if not exists public.loyalty_accounts (
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
 
+create table if not exists public.loyalty_reward_claims (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references public.loyalty_customers(id) on delete cascade,
+  claimed_at timestamptz not null default timezone('utc'::text, now()),
+  notes text,
+  created_at timestamptz not null default timezone('utc'::text, now())
+);
+
 create index if not exists loyalty_visits_customer_id_idx on public.loyalty_visits(customer_id);
 create index if not exists loyalty_visits_visit_date_idx on public.loyalty_visits(visit_date desc);
+create index if not exists loyalty_reward_claims_customer_id_idx on public.loyalty_reward_claims(customer_id);
+create index if not exists loyalty_reward_claims_claimed_at_idx on public.loyalty_reward_claims(claimed_at desc);

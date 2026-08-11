@@ -67,6 +67,56 @@ function buildTransactions(items = []) {
   });
 }
 
+function downloadTransactionsFile(transactions = [], filename = "cleanstep-daily-finances.csv") {
+  const rows = [
+    [
+      "Sale Date",
+      "Time",
+      "Payment Method",
+      "Item",
+      "Quantity",
+      "Unit Price",
+      "Line Total",
+      "Transaction Total",
+    ],
+  ];
+
+  transactions.forEach((transaction) => {
+    const timeOnly = formatTransactionTimestamp(transaction.createdAt, "")
+      .replace(/^.*at /, "")
+      .trim();
+
+    transaction.lines.forEach((line, index) => {
+      rows.push([
+        transaction.saleDate,
+        timeOnly,
+        transaction.paymentMethod,
+        line.productName,
+        String(line.quantity),
+        String(line.unitPrice),
+        String(line.total),
+        index === 0 ? String(transaction.total) : "",
+      ]);
+    });
+  });
+
+  const csv = rows
+    .map((row) =>
+      row
+        .map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`)
+        .join(","),
+    )
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function SummaryStat({ label, value, accent = "blue" }) {
   const accentClass =
     accent === "red"
@@ -112,6 +162,10 @@ export default function DailyFinancesAdmin() {
     loading: false,
     error: "",
     success: "",
+  });
+  const [fullHistoryDownloadState, setFullHistoryDownloadState] = useState({
+    loading: false,
+    error: "",
   });
 
   useEffect(() => {
@@ -469,53 +523,52 @@ export default function DailyFinancesAdmin() {
       return;
     }
 
-    const rows = [
-      [
-        "Sale Date",
-        "Time",
-        "Payment Method",
-        "Item",
-        "Quantity",
-        "Unit Price",
-        "Line Total",
-        "Transaction Total",
-      ],
-    ];
+    downloadTransactionsFile(
+      groupedTransactions,
+      `cleanstep-daily-finances-${financeState.saleDate || "today"}.csv`,
+    );
+  }
 
-    groupedTransactions.forEach((transaction) => {
-      const timeOnly = formatTransactionTimestamp(transaction.createdAt, "")
-        .replace(/^.*at /, "")
-        .trim();
-
-      transaction.lines.forEach((line, index) => {
-        rows.push([
-          transaction.saleDate,
-          timeOnly,
-          transaction.paymentMethod,
-          line.productName,
-          String(line.quantity),
-          String(line.unitPrice),
-          String(line.total),
-          index === 0 ? String(transaction.total) : "",
-        ]);
-      });
+  async function downloadFullTransactionHistoryCsv() {
+    setFullHistoryDownloadState({
+      loading: true,
+      error: "",
     });
 
-    const csv = rows
-      .map((row) =>
-        row
-          .map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`)
-          .join(","),
-      )
-      .join("\n");
+    try {
+      const response = await fetch("/api/admin/daily-finances?export=all", {
+        cache: "no-store",
+      });
+      const data = await response.json();
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `cleanstep-daily-finances-${financeState.saleDate || "today"}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to download the full transaction history.");
+      }
+
+      const allTransactions = buildTransactions(data.items || []);
+
+      if (allTransactions.length === 0) {
+        setFullHistoryDownloadState({
+          loading: false,
+          error: "There are no transactions recorded yet.",
+        });
+        return;
+      }
+
+      downloadTransactionsFile(
+        allTransactions,
+        `cleanstep-full-transaction-history-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+      setFullHistoryDownloadState({
+        loading: false,
+        error: "",
+      });
+    } catch (error) {
+      setFullHistoryDownloadState({
+        loading: false,
+        error: error.message || "Unable to download the full transaction history.",
+      });
+    }
   }
 
   function printDayReport() {
@@ -644,7 +697,24 @@ export default function DailyFinancesAdmin() {
             >
               Download CSV
             </button>
+            <button
+              type="button"
+              onClick={downloadFullTransactionHistoryCsv}
+              disabled={fullHistoryDownloadState.loading || !financeState.configured}
+              className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f2f4f8] disabled:text-[#8c8488]"
+            >
+              {fullHistoryDownloadState.loading ? "Downloading history..." : "Download full history"}
+            </button>
           </div>
+
+          {fullHistoryDownloadState.error && (
+            <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+              {fullHistoryDownloadState.error}
+            </div>
+          )}
+          <p className="mt-3 text-sm text-[#7b7276]">
+            Full history includes every saved transaction, not just the 7-day totals shown here.
+          </p>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
             <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
@@ -913,10 +983,10 @@ export default function DailyFinancesAdmin() {
 
             <div className="space-y-6">
               <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Recent day totals</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">7-day record history</p>
                 {financeState.history?.length > 0 ? (
                   <div className="mt-4 space-y-3">
-                    {financeState.history.slice(0, 7).map((entry) => (
+                    {financeState.history.map((entry) => (
                       <button
                         key={entry.saleDate}
                         type="button"
@@ -934,7 +1004,17 @@ export default function DailyFinancesAdmin() {
                             {entry.totalTransactions} transaction{entry.totalTransactions === 1 ? "" : "s"} - {entry.totalUnits} unit{entry.totalUnits === 1 ? "" : "s"}
                           </p>
                         </div>
-                        <p className="font-semibold text-[#1f4b8f]">{formatCurrency(entry.totalSales)}</p>
+                        <div className="text-right">
+                          <p className="font-semibold text-[#1f4b8f]">
+                            Total: {formatCurrency(entry.totalSales)}
+                          </p>
+                          <p className="mt-1 text-sm text-[#177245]">
+                            Cash: {formatCurrency(entry.cashTotal)}
+                          </p>
+                          <p className="mt-1 text-sm text-[#e1251b]">
+                            Card: {formatCurrency(entry.cardTotal)}
+                          </p>
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -966,10 +1046,10 @@ export default function DailyFinancesAdmin() {
               </div>
 
               <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Recent transactions</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Transactions for selected date</p>
                 {groupedTransactions.length > 0 ? (
                   <div className="mt-4 space-y-3">
-                    {groupedTransactions.slice(0, 12).map((transaction) => (
+                    {groupedTransactions.map((transaction) => (
                       <div
                         key={transaction.id}
                         className="rounded-2xl border border-[#1f4b8f]/10 bg-white p-4"

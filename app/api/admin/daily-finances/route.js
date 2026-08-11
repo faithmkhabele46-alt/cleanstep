@@ -3,6 +3,7 @@ import { isAdminAuthenticated } from "../../../lib/admin-auth";
 import { createServerSupabaseClient } from "../../../lib/supabase-server";
 import {
   DAILY_FINANCE_PRODUCTS,
+  addDaysToDateString,
   calculateDailyFinancePricing,
   getDailyFinanceProduct,
   getJohannesburgDateString,
@@ -10,20 +11,11 @@ import {
   summarizeDailyFinanceSales,
 } from "../../../lib/daily-finances";
 
-async function loadSalesByDate(supabase, saleDate) {
-  const { data, error } = await supabase
-    .from("daily_finance_sales")
-    .select(
-      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
-    )
-    .eq("sale_date", saleDate)
-    .order("created_at", { ascending: false });
+const HISTORY_DAY_COUNT = 7;
+const HISTORY_PAGE_SIZE = 1000;
 
-  if (error) {
-    throw error;
-  }
-
-  return (data || []).map((item) => ({
+function mapDailyFinanceSale(item) {
+  return {
     id: item.id,
     productCode: item.product_code,
     productName: item.product_name,
@@ -34,35 +26,100 @@ async function loadSalesByDate(supabase, saleDate) {
     paymentMethod: item.payment_method,
     saleDate: item.sale_date,
     createdAt: item.created_at,
-  }));
+  };
 }
 
-async function loadRecentSales(supabase) {
-  const { data, error } = await supabase
-    .from("daily_finance_sales")
-    .select(
-      "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
-    )
-    .order("sale_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(300);
+async function loadSalesByDate(supabase, saleDate) {
+  const sales = [];
+  let from = 0;
 
-  if (error) {
-    throw error;
+  while (true) {
+    const { data, error } = await supabase
+      .from("daily_finance_sales")
+      .select(
+        "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      )
+      .eq("sale_date", saleDate)
+      .order("created_at", { ascending: false })
+      .range(from, from + HISTORY_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    sales.push(...(data || []));
+
+    if (!data || data.length < HISTORY_PAGE_SIZE) {
+      break;
+    }
+
+    from += HISTORY_PAGE_SIZE;
   }
 
-  return (data || []).map((item) => ({
-    id: item.id,
-    productCode: item.product_code,
-    productName: item.product_name,
-    category: item.category,
-    quantity: item.quantity,
-    unitPrice: Number(item.unit_price || 0),
-    total: Number(item.total || 0),
-    paymentMethod: item.payment_method,
-    saleDate: item.sale_date,
-    createdAt: item.created_at,
-  }));
+  return sales.map(mapDailyFinanceSale);
+}
+
+async function loadHistorySales(supabase, endDate) {
+  const startDate = addDaysToDateString(endDate, -(HISTORY_DAY_COUNT - 1));
+  const sales = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("daily_finance_sales")
+      .select(
+        "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      )
+      .gte("sale_date", startDate)
+      .lte("sale_date", endDate)
+      .order("sale_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, from + HISTORY_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    sales.push(...(data || []));
+
+    if (!data || data.length < HISTORY_PAGE_SIZE) {
+      break;
+    }
+
+    from += HISTORY_PAGE_SIZE;
+  }
+
+  return sales.map(mapDailyFinanceSale);
+}
+
+async function loadAllSales(supabase) {
+  const sales = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("daily_finance_sales")
+      .select(
+        "id, product_code, product_name, category, quantity, unit_price, total, payment_method, sale_date, created_at",
+      )
+      .order("sale_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, from + HISTORY_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    sales.push(...(data || []));
+
+    if (!data || data.length < HISTORY_PAGE_SIZE) {
+      break;
+    }
+
+    from += HISTORY_PAGE_SIZE;
+  }
+
+  return sales.map(mapDailyFinanceSale);
 }
 
 export async function GET(request) {
@@ -96,11 +153,26 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const saleDate = searchParams.get("saleDate") || getJohannesburgDateString();
+  const exportMode = searchParams.get("export");
 
   try {
-    const [items, recentItems] = await Promise.all([
+    if (exportMode === "all") {
+      const allItems = await loadAllSales(supabase);
+
+      return NextResponse.json({
+        configured: true,
+        message: "",
+        saleDate,
+        products: DAILY_FINANCE_PRODUCTS,
+        items: allItems,
+        summary: summarizeDailyFinanceSales(allItems),
+        history: summarizeDailyFinanceHistory(allItems),
+      });
+    }
+
+    const [items, historyItems] = await Promise.all([
       loadSalesByDate(supabase, saleDate),
-      loadRecentSales(supabase),
+      loadHistorySales(supabase, saleDate),
     ]);
 
     return NextResponse.json({
@@ -110,7 +182,7 @@ export async function GET(request) {
       products: DAILY_FINANCE_PRODUCTS,
       items,
       summary: summarizeDailyFinanceSales(items),
-      history: summarizeDailyFinanceHistory(recentItems),
+      history: summarizeDailyFinanceHistory(historyItems),
     });
   } catch (error) {
     return NextResponse.json(
@@ -242,9 +314,9 @@ export async function POST(request) {
       throw error;
     }
 
-    const [items, recentItems] = await Promise.all([
+    const [items, historyItems] = await Promise.all([
       loadSalesByDate(supabase, saleDate),
-      loadRecentSales(supabase),
+      loadHistorySales(supabase, saleDate),
     ]);
 
     return NextResponse.json({
@@ -265,7 +337,7 @@ export async function POST(request) {
       saleDate,
       items,
       summary: summarizeDailyFinanceSales(items),
-      history: summarizeDailyFinanceHistory(recentItems),
+      history: summarizeDailyFinanceHistory(historyItems),
     });
   } catch (error) {
     return NextResponse.json(
@@ -351,9 +423,9 @@ export async function PATCH(request) {
       throw error;
     }
 
-    const [items, recentItems] = await Promise.all([
+    const [items, historyItems] = await Promise.all([
       loadSalesByDate(supabase, saleDate),
-      loadRecentSales(supabase),
+      loadHistorySales(supabase, saleDate),
     ]);
 
     return NextResponse.json({
@@ -362,7 +434,7 @@ export async function PATCH(request) {
       saleDate,
       items,
       summary: summarizeDailyFinanceSales(items),
-      history: summarizeDailyFinanceHistory(recentItems),
+      history: summarizeDailyFinanceHistory(historyItems),
       pricing,
     });
   } catch (error) {
@@ -430,9 +502,9 @@ export async function DELETE(request) {
       throw error;
     }
 
-    const [items, recentItems] = await Promise.all([
+    const [items, historyItems] = await Promise.all([
       loadSalesByDate(supabase, saleDate),
-      loadRecentSales(supabase),
+      loadHistorySales(supabase, saleDate),
     ]);
 
     return NextResponse.json({
@@ -441,7 +513,7 @@ export async function DELETE(request) {
       saleDate,
       items,
       summary: summarizeDailyFinanceSales(items),
-      history: summarizeDailyFinanceHistory(recentItems),
+      history: summarizeDailyFinanceHistory(historyItems),
     });
   } catch (error) {
     return NextResponse.json(

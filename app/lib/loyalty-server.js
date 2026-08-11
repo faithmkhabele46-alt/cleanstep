@@ -7,6 +7,37 @@ import {
   normalizeWhatsAppNumber,
 } from "./loyalty";
 
+function isMissingRewardClaimsTable(error) {
+  return (
+    error?.code === "42P01" ||
+    error?.message?.toLowerCase().includes("loyalty_reward_claims")
+  );
+}
+
+async function loadRewardClaims(supabase, customerId) {
+  const { data, error } = await supabase
+    .from("loyalty_reward_claims")
+    .select("id, claimed_at, notes, created_at")
+    .eq("customer_id", customerId)
+    .order("claimed_at", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingRewardClaimsTable(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  return (data || []).map((claim) => ({
+    id: claim.id,
+    claimedAt: claim.claimed_at,
+    notes: claim.notes,
+    createdAt: claim.created_at,
+  }));
+}
+
 export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
   const supabase = createServerSupabaseClient();
 
@@ -76,8 +107,9 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
       points: getLoyaltyVisitPoints(visit.quantity || 1),
       createdAt: visit.created_at,
     })) || [];
+  const rewardClaims = await loadRewardClaims(supabase, customer.id);
   const totalPoints = mappedVisits.reduce((sum, visit) => sum + visit.points, 0);
-  const progress = getLoyaltyProgress(totalPoints, mappedVisits.length);
+  const progress = getLoyaltyProgress(totalPoints, mappedVisits.length, rewardClaims.length);
 
   return {
     found: true,
@@ -89,6 +121,7 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
     },
     progress,
     visits: mappedVisits,
+    rewardClaims,
   };
 }
 

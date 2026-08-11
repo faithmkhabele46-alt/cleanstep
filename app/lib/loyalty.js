@@ -54,29 +54,39 @@ export function formatLoyaltyPoints(points = 0) {
   return safePoints.toFixed(1).replace(/\.0$/, "");
 }
 
-export function getLoyaltyProgress(totalPoints = 0, totalVisits = 0) {
-  const safePoints = Number.isFinite(totalPoints)
+export function getLoyaltyProgress(totalPoints = 0, totalVisits = 0, claimedRewards = 0) {
+  const earnedPoints = Number.isFinite(Number(totalPoints))
     ? Math.max(0, Number(totalPoints))
     : 0;
-  const safeTotalVisits = Number.isFinite(totalVisits) ? Math.max(0, totalVisits) : 0;
-  const pointsIntoCurrentReward = safePoints % LOYALTY_REWARD_TARGET;
-  const rewardUnlocked =
-    safePoints >= LOYALTY_REWARD_TARGET && pointsIntoCurrentReward === 0;
+  const safeTotalVisits = Number.isFinite(Number(totalVisits))
+    ? Math.max(0, Number(totalVisits))
+    : 0;
+  const safeClaimedRewards = Number.isFinite(Number(claimedRewards))
+    ? Math.max(0, Math.floor(Number(claimedRewards)))
+    : 0;
+  const claimedPoints = safeClaimedRewards * LOYALTY_REWARD_TARGET;
+  const activePoints = Math.max(0, earnedPoints - claimedPoints);
+  const rewardUnlocked = activePoints >= LOYALTY_REWARD_TARGET;
+  const pointsIntoCurrentReward = rewardUnlocked
+    ? LOYALTY_REWARD_TARGET
+    : activePoints % LOYALTY_REWARD_TARGET;
   const pointsLeft = rewardUnlocked
     ? 0
     : Math.max(0, LOYALTY_REWARD_TARGET - pointsIntoCurrentReward);
-  const currentCyclePoints = rewardUnlocked ? LOYALTY_REWARD_TARGET : pointsIntoCurrentReward;
 
   return {
     totalVisits: safeTotalVisits,
-    totalPoints: safePoints,
+    totalPoints: activePoints,
+    earnedPoints,
     rewardTarget: LOYALTY_REWARD_TARGET,
     minimumQualifyingItems: LOYALTY_MIN_QUALIFYING_ITEMS,
-    completedRewards: Math.floor(safePoints / LOYALTY_REWARD_TARGET),
-    pointsIntoCurrentReward: currentCyclePoints,
+    completedRewards: Math.floor(earnedPoints / LOYALTY_REWARD_TARGET),
+    claimedRewards: safeClaimedRewards,
+    availableRewards: Math.floor(activePoints / LOYALTY_REWARD_TARGET),
+    pointsIntoCurrentReward,
     pointsLeft,
     rewardUnlocked,
-    progressPercentage: Math.round((currentCyclePoints / LOYALTY_REWARD_TARGET) * 100),
+    progressPercentage: Math.round((pointsIntoCurrentReward / LOYALTY_REWARD_TARGET) * 100),
   };
 }
 
@@ -100,8 +110,9 @@ export function buildLoyaltyShareMessage({
   whatsAppNumber = "",
   totalVisits = 0,
   totalPoints = 0,
+  claimedRewards = 0,
 } = {}) {
-  const progress = getLoyaltyProgress(totalPoints, totalVisits);
+  const progress = getLoyaltyProgress(totalPoints, totalVisits, claimedRewards);
   const link = buildLoyaltyDashboardUrl(whatsAppNumber);
   const greeting = customerName ? `Hi ${customerName},` : "Hi,";
 

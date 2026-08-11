@@ -11,6 +11,30 @@ import {
   normalizeWhatsAppNumber,
 } from "../../../lib/loyalty";
 
+function isMissingRewardClaimsTable(error) {
+  return (
+    error?.code === "42P01" ||
+    error?.message?.toLowerCase().includes("loyalty_reward_claims")
+  );
+}
+
+function mapLoyaltyVisit(visit) {
+  return {
+    id: visit.id,
+    visitDate: visit.visit_date,
+    shoeType: visit.shoe_type,
+    receiptNumber: visit.receipt_number,
+    notes: visit.notes,
+    quantity: visit.quantity || 1,
+    qualifies: isQualifyingLoyaltyVisit(visit.quantity || 1),
+    points: getLoyaltyVisitPoints(visit.quantity || 1),
+    createdAt: visit.created_at,
+    customerId: visit.loyalty_customers?.id || visit.customer_id || "",
+    customerName: visit.loyalty_customers?.customer_name || "Unknown customer",
+    whatsAppNumber: formatWhatsAppNumber(visit.loyalty_customers?.whatsapp_number || ""),
+  };
+}
+
 async function loadRecentVisits(supabase) {
   const { data, error } = await supabase
     .from("loyalty_visits")
@@ -25,20 +49,7 @@ async function loadRecentVisits(supabase) {
     throw error;
   }
 
-  return (data || []).map((visit) => ({
-    id: visit.id,
-    visitDate: visit.visit_date,
-    shoeType: visit.shoe_type,
-    receiptNumber: visit.receipt_number,
-    notes: visit.notes,
-    quantity: visit.quantity || 1,
-    qualifies: isQualifyingLoyaltyVisit(visit.quantity || 1),
-    points: getLoyaltyVisitPoints(visit.quantity || 1),
-    createdAt: visit.created_at,
-    customerId: visit.loyalty_customers?.id || "",
-    customerName: visit.loyalty_customers?.customer_name || "Unknown customer",
-    whatsAppNumber: formatWhatsAppNumber(visit.loyalty_customers?.whatsapp_number || ""),
-  }));
+  return (data || []).map(mapLoyaltyVisit);
 }
 
 async function loadCustomers(supabase) {
@@ -68,7 +79,67 @@ async function loadCustomerById(supabase, customerId) {
   return data;
 }
 
-export async function GET() {
+async function loadRewardClaims(supabase, customerId) {
+  const { data, error } = await supabase
+    .from("loyalty_reward_claims")
+    .select("id, claimed_at, notes, created_at")
+    .eq("customer_id", customerId)
+    .order("claimed_at", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingRewardClaimsTable(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  return (data || []).map((claim) => ({
+    id: claim.id,
+    claimedAt: claim.claimed_at,
+    notes: claim.notes,
+    createdAt: claim.created_at,
+  }));
+}
+
+async function loadCustomerLoyaltyDetail(supabase, customerId) {
+  const customer = await loadCustomerById(supabase, customerId);
+
+  if (!customer) {
+    return null;
+  }
+
+  const { data: visits, error: visitsError } = await supabase
+    .from("loyalty_visits")
+    .select("id, customer_id, visit_date, shoe_type, receipt_number, notes, quantity, created_at")
+    .eq("customer_id", customerId)
+    .order("visit_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (visitsError) {
+    throw visitsError;
+  }
+
+  const mappedVisits = (visits || []).map(mapLoyaltyVisit);
+  const rewardClaims = await loadRewardClaims(supabase, customerId);
+  const earnedPoints = mappedVisits.reduce((sum, visit) => sum + visit.points, 0);
+  const progress = getLoyaltyProgress(earnedPoints, mappedVisits.length, rewardClaims.length);
+
+  return {
+    customer: {
+      id: customer.id,
+      customerName: customer.customer_name,
+      whatsAppNumber: formatWhatsAppNumber(customer.whatsapp_number),
+    },
+    visits: mappedVisits,
+    rewardClaims,
+    progress,
+    dashboardUrl: buildLoyaltyDashboardUrl(customer.whatsapp_number),
+  };
+}
+
+export async function GET(request) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json(
       {
@@ -93,7 +164,34 @@ export async function GET() {
     });
   }
 
+  const { searchParams } = new URL(request.url);
+  const customerId = searchParams.get("customerId");
+
   try {
+    if (customerId) {
+      const detail = await loadCustomerLoyaltyDetail(supabase, customerId);
+
+      if (!detail) {
+        return NextResponse.json(
+          {
+            configured: true,
+            message: "That loyalty customer could not be found anymore.",
+            customer: null,
+            visits: [],
+            rewardClaims: [],
+            progress: null,
+          },
+          { status: 404 },
+        );
+      }
+
+      return NextResponse.json({
+        configured: true,
+        message: "",
+        ...detail,
+      });
+    }
+
     const [items, customers] = await Promise.all([
       loadRecentVisits(supabase),
       loadCustomers(supabase),
@@ -279,13 +377,15 @@ export async function POST(request) {
       (sum, visit) => sum + getLoyaltyVisitPoints(visit.quantity || 1),
       0,
     );
-    const progress = getLoyaltyProgress(totalPoints, count || 0);
+    const rewardClaims = await loadRewardClaims(supabase, customerId);
+    const progress = getLoyaltyProgress(totalPoints, count || 0, rewardClaims.length);
     const dashboardUrl = buildLoyaltyDashboardUrl(whatsAppNumber);
     const shareMessage = buildLoyaltyShareMessage({
       customerName,
       whatsAppNumber,
       totalVisits: progress.totalVisits,
-      totalPoints: progress.totalPoints,
+      totalPoints,
+      claimedRewards: rewardClaims.length,
     });
 
     return NextResponse.json({
@@ -307,6 +407,7 @@ export async function POST(request) {
         whatsAppNumber: formatWhatsAppNumber(whatsAppNumber),
       },
       progress,
+      rewardClaims,
       dashboardUrl,
       shareMessage,
       requiresRegistration: !existingCustomer?.loyalty_accounts,
@@ -316,6 +417,164 @@ export async function POST(request) {
       {
         saved: false,
         message: error.message || "Unable to save loyalty visit.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const supabase = createServerSupabaseClient();
+
+  if (!supabase) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message:
+          "Supabase loyalty access is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to claim rewards.",
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const action = body.action;
+    const customerId = body.customerId?.trim();
+
+    if (action !== "claimReward") {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "Choose a supported loyalty action first.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!customerId) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "Choose the customer who claimed the free wash first.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const detail = await loadCustomerLoyaltyDetail(supabase, customerId);
+
+    if (!detail) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "That loyalty customer could not be found anymore.",
+        },
+        { status: 404 },
+      );
+    }
+
+    const { error } = await supabase.from("loyalty_reward_claims").insert({
+      customer_id: customerId,
+      claimed_at: new Date().toISOString(),
+      notes: body.notes?.trim() || null,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const updatedDetail = await loadCustomerLoyaltyDetail(supabase, customerId);
+
+    return NextResponse.json({
+      saved: true,
+      message: "Free wash claim recorded. The loyalty bar has been reset.",
+      ...updatedDetail,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        saved: false,
+        message: error.message || "Unable to record the free wash claim.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json(
+      {
+        deleted: false,
+        message: "Admin sign-in is required.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const supabase = createServerSupabaseClient();
+
+  if (!supabase) {
+    return NextResponse.json(
+      {
+        deleted: false,
+        message:
+          "Supabase loyalty access is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to delete visits.",
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const visitId = searchParams.get("visitId");
+    const customerId = searchParams.get("customerId");
+
+    if (!visitId) {
+      return NextResponse.json(
+        {
+          deleted: false,
+          message: "Choose the visit record you want to delete first.",
+        },
+        { status: 400 },
+      );
+    }
+
+    let deleteQuery = supabase.from("loyalty_visits").delete().eq("id", visitId);
+
+    if (customerId) {
+      deleteQuery = deleteQuery.eq("customer_id", customerId);
+    }
+
+    const { error } = await deleteQuery;
+
+    if (error) {
+      throw error;
+    }
+
+    const detail = customerId ? await loadCustomerLoyaltyDetail(supabase, customerId) : null;
+
+    return NextResponse.json({
+      deleted: true,
+      message: "Loyalty visit deleted successfully.",
+      ...(detail || {}),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        deleted: false,
+        message: error.message || "Unable to delete the loyalty visit.",
       },
       { status: 500 },
     );

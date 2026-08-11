@@ -107,6 +107,134 @@ function formatVisitItemsForSave(items = []) {
     .join(" | ");
 }
 
+function LoyaltyProgressStamp({ filled, number }) {
+  return (
+    <div
+      className={classNames(
+        "flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition",
+        filled
+          ? "border-[#1f4b8f] bg-[#1f4b8f] text-white shadow-[0_12px_28px_rgba(31,75,143,0.18)]"
+          : "border-[#1f4b8f]/10 bg-white text-[#7b7276]",
+      )}
+    >
+      {number}
+    </div>
+  );
+}
+
+function LoyaltyCustomerProgressPanel({
+  detail,
+  onClaimReward,
+  onDeleteVisit,
+  loadingAction,
+}) {
+  if (!detail.customer || !detail.progress) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-3xl border border-[#1f4b8f]/12 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Free wash progress</p>
+          <h3 className="mt-2 text-xl font-semibold text-[#3f363a]">
+            {detail.progress.rewardUnlocked
+              ? "Free wash ready"
+              : `${formatLoyaltyPoints(detail.progress.pointsLeft)} point${detail.progress.pointsLeft === 1 ? "" : "s"} to go`}
+          </h3>
+          <p className="mt-1 text-sm text-[#5c5357]">
+            Current points: {formatLoyaltyPoints(detail.progress.totalPoints)} / {detail.progress.rewardTarget}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClaimReward}
+          disabled={loadingAction}
+          className="rounded-2xl bg-[#1f4b8f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#173a70] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#8c8488]"
+        >
+          {loadingAction ? "Saving..." : "Mark free wash claimed"}
+        </button>
+      </div>
+      <p className="mt-3 text-sm text-[#7b7276]">
+        Admin can mark a free wash claimed even before the bar is full.
+      </p>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        {Array.from({ length: detail.progress.rewardTarget }).map((_, index) => (
+          <LoyaltyProgressStamp
+            key={`admin-stamp-${index + 1}`}
+            number={index + 1}
+            filled={index < Math.floor(detail.progress.pointsIntoCurrentReward)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#eef4ff] shadow-inner">
+        <div
+          className="h-full rounded-full bg-[linear-gradient(90deg,#e1251b,#1f4b8f)] transition-all"
+          style={{ width: `${Math.max(8, detail.progress.progressPercentage || 0)}%` }}
+        />
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Visits</p>
+          <p className="mt-2 text-2xl font-semibold text-[#1f4b8f]">{detail.progress.totalVisits}</p>
+        </div>
+        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Earned points</p>
+          <p className="mt-2 text-2xl font-semibold text-[#1f4b8f]">
+            {formatLoyaltyPoints(detail.progress.earnedPoints)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Claimed washes</p>
+          <p className="mt-2 text-2xl font-semibold text-[#1f4b8f]">
+            {detail.progress.claimedRewards}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Recorded visits</p>
+        {detail.visits.length > 0 ? (
+          <div className="mt-3 space-y-3">
+            {detail.visits.map((visit) => (
+              <div
+                key={visit.id}
+                className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[#3f363a]">{visit.shoeType}</p>
+                    <p className="mt-1 text-sm text-[#5c5357]">
+                      {visit.visitDate} - {visit.quantity} item{visit.quantity === 1 ? "" : "s"} - {formatLoyaltyPoints(visit.points)} point{visit.points === 1 ? "" : "s"}
+                    </p>
+                    {visit.receiptNumber && (
+                      <p className="mt-1 text-xs text-[#7b7276]">Receipt: {visit.receiptNumber}</p>
+                    )}
+                    {visit.notes && <p className="mt-1 text-xs text-[#7b7276]">{visit.notes}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteVisit(visit)}
+                    disabled={loadingAction}
+                    className="rounded-full border border-[#e1251b]/16 bg-[#fff3f2] px-3 py-1 text-xs font-semibold text-[#e1251b] hover:bg-[#ffe7e4] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Delete record
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-[#7b7276]">No visits recorded for this customer yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BookingCard({ booking }) {
   return (
     <div className="rounded-3xl border border-[#1f4b8f]/12 bg-white p-5 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
@@ -204,6 +332,17 @@ export default function AdminPage() {
     loading: false,
     error: "",
     success: "",
+  });
+  const [selectedCustomerDetail, setSelectedCustomerDetail] = useState({
+    loading: false,
+    saving: false,
+    error: "",
+    success: "",
+    customer: null,
+    progress: null,
+    visits: [],
+    rewardClaims: [],
+    dashboardUrl: "",
   });
 
   useEffect(() => {
@@ -358,6 +497,185 @@ export default function AdminPage() {
       ...current,
       visitItems: current.visitItems.filter((item) => item.id !== itemId),
     }));
+  }
+
+  function applySelectedCustomerDetail(data, success = "") {
+    setSelectedCustomerDetail({
+      loading: false,
+      saving: false,
+      error: "",
+      success,
+      customer: data.customer || null,
+      progress: data.progress || null,
+      visits: data.visits || [],
+      rewardClaims: data.rewardClaims || [],
+      dashboardUrl: data.dashboardUrl || "",
+    });
+  }
+
+  async function refreshLoyaltyOverview() {
+    const loyaltyResponse = await fetch("/api/admin/loyalty", { cache: "no-store" });
+    const loyaltyData = await loyaltyResponse.json();
+
+    setLoyaltyState({
+      loading: false,
+      configured: loyaltyData.configured,
+      message: loyaltyData.message,
+      items: loyaltyData.items || [],
+      customers: loyaltyData.customers || [],
+    });
+  }
+
+  async function loadSelectedCustomerDetail(customerId, success = "") {
+    if (!customerId) {
+      return;
+    }
+
+    setSelectedCustomerDetail((current) => ({
+      ...current,
+      loading: true,
+      saving: false,
+      error: "",
+      success: "",
+    }));
+
+    try {
+      const response = await fetch(
+        `/api/admin/loyalty?customerId=${encodeURIComponent(customerId)}`,
+        { cache: "no-store" },
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to load this customer's loyalty progress.");
+      }
+
+      applySelectedCustomerDetail(data, success);
+    } catch (error) {
+      setSelectedCustomerDetail((current) => ({
+        ...current,
+        loading: false,
+        saving: false,
+        error: error.message || "Unable to load this customer's loyalty progress.",
+        success: "",
+      }));
+    }
+  }
+
+  function selectLoyaltyCustomer(customer) {
+    setSelectedCustomerId(customer.customerId);
+    setLoyaltyForm((current) => ({
+      ...current,
+      customerName: customer.customerName,
+      whatsAppNumber: customer.whatsAppNumber,
+    }));
+    setSubmitState({
+      loading: false,
+      error: "",
+      success: "",
+      dashboardUrl: "",
+      shareMessage: "",
+      progress: null,
+    });
+    setCustomerUpdateState({
+      loading: false,
+      error: "",
+      success: "",
+    });
+    loadSelectedCustomerDetail(customer.customerId);
+  }
+
+  async function handleClaimReward() {
+    if (!selectedCustomerId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Mark ${selectedCustomerDetail.customer?.customerName || "this customer"}'s free wash as claimed?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSelectedCustomerDetail((current) => ({
+      ...current,
+      saving: true,
+      error: "",
+      success: "",
+    }));
+
+    try {
+      const response = await fetch("/api/admin/loyalty", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "claimReward",
+          customerId: selectedCustomerId,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.saved) {
+        throw new Error(data.message || "Unable to record the free wash claim.");
+      }
+
+      applySelectedCustomerDetail(data, data.message);
+      await refreshLoyaltyOverview();
+    } catch (error) {
+      setSelectedCustomerDetail((current) => ({
+        ...current,
+        saving: false,
+        error: error.message || "Unable to record the free wash claim.",
+        success: "",
+      }));
+    }
+  }
+
+  async function handleDeleteLoyaltyVisit(visit) {
+    if (!selectedCustomerId || !visit?.id) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${visit.shoeType} from ${visit.visitDate}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSelectedCustomerDetail((current) => ({
+      ...current,
+      saving: true,
+      error: "",
+      success: "",
+    }));
+
+    try {
+      const params = new URLSearchParams({
+        customerId: selectedCustomerId,
+        visitId: visit.id,
+      });
+      const response = await fetch(`/api/admin/loyalty?${params.toString()}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.deleted) {
+        throw new Error(data.message || "Unable to delete the loyalty visit.");
+      }
+
+      applySelectedCustomerDetail(data, data.message);
+      await refreshLoyaltyOverview();
+    } catch (error) {
+      setSelectedCustomerDetail((current) => ({
+        ...current,
+        saving: false,
+        error: error.message || "Unable to delete the loyalty visit.",
+        success: "",
+      }));
+    }
   }
 
   async function handleAdminLogin(event) {
@@ -536,15 +854,14 @@ export default function AdminPage() {
         notes: "",
       }));
 
-      const loyaltyResponse = await fetch("/api/admin/loyalty", { cache: "no-store" });
-      const loyaltyData = await loyaltyResponse.json();
-      setLoyaltyState({
-        loading: false,
-        configured: loyaltyData.configured,
-        message: loyaltyData.message,
-        items: loyaltyData.items || [],
-        customers: loyaltyData.customers || [],
-      });
+      await refreshLoyaltyOverview();
+
+      const savedCustomerId = data.customer?.id || selectedCustomerId;
+
+      if (savedCustomerId) {
+        setSelectedCustomerId(savedCustomerId);
+        await loadSelectedCustomerDetail(savedCustomerId);
+      }
     } catch (error) {
       setSubmitState({
         loading: false,
@@ -590,15 +907,8 @@ export default function AdminPage() {
         success: data.message,
       });
 
-      const loyaltyResponse = await fetch("/api/admin/loyalty", { cache: "no-store" });
-      const loyaltyData = await loyaltyResponse.json();
-      setLoyaltyState({
-        loading: false,
-        configured: loyaltyData.configured,
-        message: loyaltyData.message,
-        items: loyaltyData.items || [],
-        customers: loyaltyData.customers || [],
-      });
+      await refreshLoyaltyOverview();
+      await loadSelectedCustomerDetail(selectedCustomerId);
     } catch (error) {
       setCustomerUpdateState({
         loading: false,
@@ -765,6 +1075,17 @@ export default function AdminPage() {
                         onClick={() => {
                           setSelectedCustomerId("");
                           setLoyaltySearch("");
+                          setSelectedCustomerDetail({
+                            loading: false,
+                            saving: false,
+                            error: "",
+                            success: "",
+                            customer: null,
+                            progress: null,
+                            visits: [],
+                            rewardClaims: [],
+                            dashboardUrl: "",
+                          });
                           setCustomerUpdateState({
                             loading: false,
                             error: "",
@@ -784,19 +1105,7 @@ export default function AdminPage() {
                       <button
                         key={customer.customerId}
                         type="button"
-                        onClick={() => {
-                          setSelectedCustomerId(customer.customerId);
-                          setLoyaltyForm((current) => ({
-                            ...current,
-                            customerName: customer.customerName,
-                            whatsAppNumber: customer.whatsAppNumber,
-                          }));
-                          setCustomerUpdateState({
-                            loading: false,
-                            error: "",
-                            success: "",
-                          });
-                        }}
+                        onClick={() => selectLoyaltyCustomer(customer)}
                         className={classNames(
                           "rounded-2xl border px-4 py-4 text-left transition",
                           selectedCustomerId === customer.customerId
@@ -819,6 +1128,31 @@ export default function AdminPage() {
                       : "Start typing a name or WhatsApp number to load an existing customer."}
                   </p>
                 )}
+
+                {selectedCustomerDetail.loading && (
+                  <div className="mt-4 rounded-2xl border border-[#1f4b8f]/12 bg-white p-4 text-sm text-[#7b7276]">
+                    Loading customer loyalty progress...
+                  </div>
+                )}
+
+                {selectedCustomerDetail.error && (
+                  <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+                    {selectedCustomerDetail.error}
+                  </div>
+                )}
+
+                {selectedCustomerDetail.success && (
+                  <div className="mt-4 rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
+                    {selectedCustomerDetail.success}
+                  </div>
+                )}
+
+                <LoyaltyCustomerProgressPanel
+                  detail={selectedCustomerDetail}
+                  onClaimReward={handleClaimReward}
+                  onDeleteVisit={handleDeleteLoyaltyVisit}
+                  loadingAction={selectedCustomerDetail.saving}
+                />
               </div>
 
               <form onSubmit={handleLoyaltySubmit} className="mt-6 space-y-4">
