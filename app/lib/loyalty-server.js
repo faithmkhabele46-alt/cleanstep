@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "./supabase-server";
 import {
   formatWhatsAppNumber,
+  LOYALTY_REWARD_TARGET,
   getLoyaltyVisitPoints,
   getLoyaltyProgress,
   isQualifyingLoyaltyVisit,
@@ -17,7 +18,7 @@ function isMissingRewardClaimsTable(error) {
 async function loadRewardClaims(supabase, customerId) {
   const { data, error } = await supabase
     .from("loyalty_reward_claims")
-    .select("id, claimed_at, notes, created_at")
+    .select("id, claimed_at, points_claimed, notes, created_at")
     .eq("customer_id", customerId)
     .order("claimed_at", { ascending: false })
     .order("created_at", { ascending: false });
@@ -33,6 +34,7 @@ async function loadRewardClaims(supabase, customerId) {
   return (data || []).map((claim) => ({
     id: claim.id,
     claimedAt: claim.claimed_at,
+    pointsClaimed: Number(claim.points_claimed || LOYALTY_REWARD_TARGET),
     notes: claim.notes,
     createdAt: claim.created_at,
   }));
@@ -109,7 +111,13 @@ export async function getLoyaltyDashboardData(rawWhatsAppNumber = "") {
     })) || [];
   const rewardClaims = await loadRewardClaims(supabase, customer.id);
   const totalPoints = mappedVisits.reduce((sum, visit) => sum + visit.points, 0);
-  const progress = getLoyaltyProgress(totalPoints, mappedVisits.length, rewardClaims.length);
+  const claimedPoints = rewardClaims.reduce((sum, claim) => sum + claim.pointsClaimed, 0);
+  const progress = getLoyaltyProgress(
+    totalPoints,
+    mappedVisits.length,
+    rewardClaims.length,
+    claimedPoints,
+  );
 
   return {
     found: true,

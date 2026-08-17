@@ -54,7 +54,12 @@ export function formatLoyaltyPoints(points = 0) {
   return safePoints.toFixed(1).replace(/\.0$/, "");
 }
 
-export function getLoyaltyProgress(totalPoints = 0, totalVisits = 0, claimedRewards = 0) {
+export function getLoyaltyProgress(
+  totalPoints = 0,
+  totalVisits = 0,
+  claimedRewards = 0,
+  claimedPoints = null,
+) {
   const earnedPoints = Number.isFinite(Number(totalPoints))
     ? Math.max(0, Number(totalPoints))
     : 0;
@@ -64,8 +69,10 @@ export function getLoyaltyProgress(totalPoints = 0, totalVisits = 0, claimedRewa
   const safeClaimedRewards = Number.isFinite(Number(claimedRewards))
     ? Math.max(0, Math.floor(Number(claimedRewards)))
     : 0;
-  const claimedPoints = safeClaimedRewards * LOYALTY_REWARD_TARGET;
-  const activePoints = Math.max(0, earnedPoints - claimedPoints);
+  const safeClaimedPoints = Number.isFinite(Number(claimedPoints))
+    ? Math.max(0, Number(claimedPoints))
+    : safeClaimedRewards * LOYALTY_REWARD_TARGET;
+  const activePoints = Math.max(0, earnedPoints - safeClaimedPoints);
   const rewardUnlocked = activePoints >= LOYALTY_REWARD_TARGET;
   const pointsIntoCurrentReward = rewardUnlocked
     ? LOYALTY_REWARD_TARGET
@@ -82,6 +89,7 @@ export function getLoyaltyProgress(totalPoints = 0, totalVisits = 0, claimedRewa
     minimumQualifyingItems: LOYALTY_MIN_QUALIFYING_ITEMS,
     completedRewards: Math.floor(earnedPoints / LOYALTY_REWARD_TARGET),
     claimedRewards: safeClaimedRewards,
+    claimedPoints: safeClaimedPoints,
     availableRewards: Math.floor(activePoints / LOYALTY_REWARD_TARGET),
     pointsIntoCurrentReward,
     pointsLeft,
@@ -111,8 +119,9 @@ export function buildLoyaltyShareMessage({
   totalVisits = 0,
   totalPoints = 0,
   claimedRewards = 0,
+  claimedPoints = null,
 } = {}) {
-  const progress = getLoyaltyProgress(totalPoints, totalVisits, claimedRewards);
+  const progress = getLoyaltyProgress(totalPoints, totalVisits, claimedRewards, claimedPoints);
   const link = buildLoyaltyDashboardUrl(whatsAppNumber);
   const greeting = customerName ? `Hi ${customerName},` : "Hi,";
 

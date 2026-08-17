@@ -235,6 +235,42 @@ function LoyaltyCustomerProgressPanel({
   );
 }
 
+function FreeWashReadyPanel({ customers, onSelectCustomer }) {
+  if (!customers.length) {
+    return null;
+  }
+
+  return (
+    <div className="mt-6 rounded-3xl border border-[#e1251b]/16 bg-[#fff3f2] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.22em] text-[#e1251b]">Free wash needs attention</p>
+          <h3 className="mt-2 text-xl font-semibold text-[#3f363a]">
+            {customers.length} customer{customers.length === 1 ? "" : "s"} qualify for a free wash
+          </h3>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {customers.map((customer) => (
+          <button
+            key={customer.customerId}
+            type="button"
+            onClick={() => onSelectCustomer(customer)}
+            className="rounded-2xl border border-[#e1251b]/16 bg-white px-4 py-4 text-left transition hover:bg-[#fff8f7]"
+          >
+            <p className="font-semibold text-[#3f363a]">
+              {customer.customerName} qualifies for a free wash
+            </p>
+            <p className="mt-1 text-sm text-[#7c4642]">
+              {customer.whatsAppNumber} - {formatLoyaltyPoints(customer.progress.totalPoints)} active point{customer.progress.totalPoints === 1 ? "" : "s"}
+            </p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BookingCard({ booking }) {
   return (
     <div className="rounded-3xl border border-[#1f4b8f]/12 bg-white p-5 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
@@ -308,6 +344,7 @@ export default function AdminPage() {
     message: "",
     items: [],
     customers: [],
+    rewardReadyCustomers: [],
   });
   const [loyaltyForm, setLoyaltyForm] = useState({
     customerName: "",
@@ -377,6 +414,7 @@ export default function AdminPage() {
             message: "",
             items: [],
             customers: [],
+            rewardReadyCustomers: [],
           });
           return;
         }
@@ -400,6 +438,7 @@ export default function AdminPage() {
           message: loyaltyData.message,
           items: loyaltyData.items || [],
           customers: loyaltyData.customers || [],
+          rewardReadyCustomers: loyaltyData.rewardReadyCustomers || [],
         });
       } catch (error) {
         if (!mounted) {
@@ -418,6 +457,7 @@ export default function AdminPage() {
           message: error.message || "Unable to load loyalty visits.",
           items: [],
           customers: [],
+          rewardReadyCustomers: [],
         });
         setBookingState({
           loading: false,
@@ -523,6 +563,7 @@ export default function AdminPage() {
       message: loyaltyData.message,
       items: loyaltyData.items || [],
       customers: loyaltyData.customers || [],
+      rewardReadyCustomers: loyaltyData.rewardReadyCustomers || [],
     });
   }
 
@@ -733,6 +774,7 @@ export default function AdminPage() {
         message: loyaltyData.message,
         items: loyaltyData.items || [],
         customers: loyaltyData.customers || [],
+        rewardReadyCustomers: loyaltyData.rewardReadyCustomers || [],
       });
     } catch (error) {
       setLoginState({
@@ -770,6 +812,7 @@ export default function AdminPage() {
       message: "",
       items: [],
       customers: [],
+      rewardReadyCustomers: [],
     });
   }
 
@@ -941,6 +984,7 @@ export default function AdminPage() {
   const selectedCustomer = (loyaltyState.customers || []).find(
     (customer) => customer.customerId === selectedCustomerId,
   );
+  const rewardReadyCustomers = loyaltyState.rewardReadyCustomers || [];
 
   if (authState.loading) {
     return (
@@ -1049,6 +1093,11 @@ export default function AdminPage() {
                 Add the customer visit here first. Once it is saved, the customer dashboard updates automatically.
               </p>
 
+              <FreeWashReadyPanel
+                customers={rewardReadyCustomers}
+                onSelectCustomer={selectLoyaltyCustomer}
+              />
+
               <div className="mt-6 rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-4">
                 <label className="text-sm font-semibold text-[#3f363a]" htmlFor="loyaltySearch">
                   Search existing loyalty customer
@@ -1097,6 +1146,50 @@ export default function AdminPage() {
                         Clear
                       </button>
                     </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="text-sm font-semibold text-[#3f363a]" htmlFor="selectedCustomerName">
+                          Edit customer name
+                        </label>
+                        <input
+                          id="selectedCustomerName"
+                          value={loyaltyForm.customerName}
+                          onChange={(event) => updateLoyaltyField("customerName", event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                          placeholder="Customer full name"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-semibold text-[#3f363a]" htmlFor="selectedWhatsAppNumber">
+                          Edit WhatsApp number
+                        </label>
+                        <input
+                          id="selectedWhatsAppNumber"
+                          value={loyaltyForm.whatsAppNumber}
+                          onChange={(event) => updateLoyaltyField("whatsAppNumber", event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                          placeholder="e.g. 069 110 2046"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCustomerUpdate}
+                      disabled={customerUpdateState.loading || !selectedCustomerId}
+                      className="mt-4 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fa] disabled:text-[#9aa2b4]"
+                    >
+                      {customerUpdateState.loading ? "Saving customer changes..." : "Save customer details"}
+                    </button>
+                    {customerUpdateState.error && (
+                      <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+                        {customerUpdateState.error}
+                      </div>
+                    )}
+                    {customerUpdateState.success && (
+                      <div className="mt-4 rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
+                        {customerUpdateState.success}
+                      </div>
+                    )}
                   </div>
                 )}
                 {filteredCustomers.length > 0 ? (
@@ -1359,31 +1452,11 @@ export default function AdminPage() {
                 >
                   {submitState.loading ? "Saving loyalty visit..." : "Save loyalty visit"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleCustomerUpdate}
-                  disabled={customerUpdateState.loading || !selectedCustomerId}
-                  className="w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-base font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fa] disabled:text-[#9aa2b4]"
-                >
-                  {customerUpdateState.loading ? "Saving customer changes..." : "Update selected customer"}
-                </button>
               </form>
 
               {submitState.error && (
                 <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
                   {submitState.error}
-                </div>
-              )}
-
-              {customerUpdateState.error && (
-                <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
-                  {customerUpdateState.error}
-                </div>
-              )}
-
-              {customerUpdateState.success && (
-                <div className="mt-4 rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
-                  {customerUpdateState.success}
                 </div>
               )}
 

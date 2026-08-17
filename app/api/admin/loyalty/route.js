@@ -5,11 +5,14 @@ import {
   buildLoyaltyDashboardUrl,
   buildLoyaltyShareMessage,
   formatWhatsAppNumber,
+  LOYALTY_REWARD_TARGET,
   getLoyaltyVisitPoints,
   getLoyaltyProgress,
   isQualifyingLoyaltyVisit,
   normalizeWhatsAppNumber,
 } from "../../../lib/loyalty";
+
+const LOYALTY_PAGE_SIZE = 1000;
 
 function isMissingRewardClaimsTable(error) {
   return (
@@ -82,7 +85,7 @@ async function loadCustomerById(supabase, customerId) {
 async function loadRewardClaims(supabase, customerId) {
   const { data, error } = await supabase
     .from("loyalty_reward_claims")
-    .select("id, claimed_at, notes, created_at")
+    .select("id, claimed_at, points_claimed, notes, created_at")
     .eq("customer_id", customerId)
     .order("claimed_at", { ascending: false })
     .order("created_at", { ascending: false });
@@ -98,9 +101,77 @@ async function loadRewardClaims(supabase, customerId) {
   return (data || []).map((claim) => ({
     id: claim.id,
     claimedAt: claim.claimed_at,
+    pointsClaimed: Number(claim.points_claimed || LOYALTY_REWARD_TARGET),
     notes: claim.notes,
     createdAt: claim.created_at,
   }));
+}
+
+async function loadAllRewardClaims(supabase) {
+  const claims = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("loyalty_reward_claims")
+      .select("id, customer_id, claimed_at, points_claimed, notes, created_at")
+      .order("claimed_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, from + LOYALTY_PAGE_SIZE - 1);
+
+    if (error) {
+      if (isMissingRewardClaimsTable(error)) {
+        return [];
+      }
+
+      throw error;
+    }
+
+    claims.push(...(data || []));
+
+    if (!data || data.length < LOYALTY_PAGE_SIZE) {
+      break;
+    }
+
+    from += LOYALTY_PAGE_SIZE;
+  }
+
+  return claims.map((claim) => ({
+    id: claim.id,
+    customerId: claim.customer_id,
+    claimedAt: claim.claimed_at,
+    pointsClaimed: Number(claim.points_claimed || LOYALTY_REWARD_TARGET),
+    notes: claim.notes,
+    createdAt: claim.created_at,
+  }));
+}
+
+async function loadAllVisitSummaries(supabase) {
+  const visits = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("loyalty_visits")
+      .select("id, customer_id, visit_date, shoe_type, quantity, created_at")
+      .order("visit_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, from + LOYALTY_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    visits.push(...(data || []));
+
+    if (!data || data.length < LOYALTY_PAGE_SIZE) {
+      break;
+    }
+
+    from += LOYALTY_PAGE_SIZE;
+  }
+
+  return visits;
 }
 
 async function loadCustomerLoyaltyDetail(supabase, customerId) {
@@ -124,7 +195,13 @@ async function loadCustomerLoyaltyDetail(supabase, customerId) {
   const mappedVisits = (visits || []).map(mapLoyaltyVisit);
   const rewardClaims = await loadRewardClaims(supabase, customerId);
   const earnedPoints = mappedVisits.reduce((sum, visit) => sum + visit.points, 0);
-  const progress = getLoyaltyProgress(earnedPoints, mappedVisits.length, rewardClaims.length);
+  const claimedPoints = rewardClaims.reduce((sum, claim) => sum + claim.pointsClaimed, 0);
+  const progress = getLoyaltyProgress(
+    earnedPoints,
+    mappedVisits.length,
+    rewardClaims.length,
+    claimedPoints,
+  );
 
   return {
     customer: {
@@ -192,11 +269,15 @@ export async function GET(request) {
       });
     }
 
-    const [items, customers] = await Promise.all([
+    const [items, customers, allVisits, allRewardClaims] = await Promise.all([
       loadRecentVisits(supabase),
       loadCustomers(supabase),
+      loadAllVisitSummaries(supabase),
+      loadAllRewardClaims(supabase),
     ]);
     const latestVisitByCustomer = new Map();
+    const visitsByCustomer = new Map();
+    const claimsByCustomer = new Map();
 
     items.forEach((visit) => {
       if (!visit.customerId || latestVisitByCustomer.has(visit.customerId)) {
@@ -206,22 +287,57 @@ export async function GET(request) {
       latestVisitByCustomer.set(visit.customerId, visit);
     });
 
+    allVisits.forEach((visit) => {
+      const customerVisits = visitsByCustomer.get(visit.customer_id) || [];
+      customerVisits.push(visit);
+      visitsByCustomer.set(visit.customer_id, customerVisits);
+    });
+
+    allRewardClaims.forEach((claim) => {
+      const customerClaims = claimsByCustomer.get(claim.customerId) || [];
+      customerClaims.push(claim);
+      claimsByCustomer.set(claim.customerId, customerClaims);
+    });
+
+    const mappedCustomers = customers.map((customer) => {
+      const latestVisit = latestVisitByCustomer.get(customer.id);
+      const customerVisits = visitsByCustomer.get(customer.id) || [];
+      const customerClaims = claimsByCustomer.get(customer.id) || [];
+      const earnedPoints = customerVisits.reduce(
+        (sum, visit) => sum + getLoyaltyVisitPoints(visit.quantity || 1),
+        0,
+      );
+      const claimedPoints = customerClaims.reduce(
+        (sum, claim) => sum + claim.pointsClaimed,
+        0,
+      );
+      const progress = getLoyaltyProgress(
+        earnedPoints,
+        customerVisits.length,
+        customerClaims.length,
+        claimedPoints,
+      );
+
+      return {
+        customerId: customer.id,
+        customerName: customer.customer_name,
+        whatsAppNumber: formatWhatsAppNumber(customer.whatsapp_number),
+        latestVisitDate: latestVisit?.visitDate || customerVisits[0]?.visit_date || "",
+        latestShoeType: latestVisit?.shoeType || customerVisits[0]?.shoe_type || "",
+        hasVisits: customerVisits.length > 0,
+        progress,
+      };
+    });
+    const rewardReadyCustomers = mappedCustomers
+      .filter((customer) => customer.progress.rewardUnlocked)
+      .sort((a, b) => b.progress.totalPoints - a.progress.totalPoints);
+
     return NextResponse.json({
       configured: true,
       message: "",
       items,
-      customers: customers.map((customer) => {
-        const latestVisit = latestVisitByCustomer.get(customer.id);
-
-        return {
-          customerId: customer.id,
-          customerName: customer.customer_name,
-          whatsAppNumber: formatWhatsAppNumber(customer.whatsapp_number),
-          latestVisitDate: latestVisit?.visitDate || "",
-          latestShoeType: latestVisit?.shoeType || "",
-          hasVisits: Boolean(latestVisit),
-        };
-      }),
+      customers: mappedCustomers,
+      rewardReadyCustomers,
     });
   } catch (error) {
     return NextResponse.json(
@@ -378,7 +494,8 @@ export async function POST(request) {
       0,
     );
     const rewardClaims = await loadRewardClaims(supabase, customerId);
-    const progress = getLoyaltyProgress(totalPoints, count || 0, rewardClaims.length);
+    const claimedPoints = rewardClaims.reduce((sum, claim) => sum + claim.pointsClaimed, 0);
+    const progress = getLoyaltyProgress(totalPoints, count || 0, rewardClaims.length, claimedPoints);
     const dashboardUrl = buildLoyaltyDashboardUrl(whatsAppNumber);
     const shareMessage = buildLoyaltyShareMessage({
       customerName,
@@ -386,6 +503,7 @@ export async function POST(request) {
       totalVisits: progress.totalVisits,
       totalPoints,
       claimedRewards: rewardClaims.length,
+      claimedPoints,
     });
 
     return NextResponse.json({
@@ -487,6 +605,10 @@ export async function PATCH(request) {
     const { error } = await supabase.from("loyalty_reward_claims").insert({
       customer_id: customerId,
       claimed_at: new Date().toISOString(),
+      points_claimed: Math.min(
+        detail.progress?.rewardTarget || LOYALTY_REWARD_TARGET,
+        Math.max(0, detail.progress?.totalPoints || 0),
+      ),
       notes: body.notes?.trim() || null,
     });
 
