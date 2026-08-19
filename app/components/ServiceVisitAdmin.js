@@ -243,7 +243,7 @@ function OwnerDashboardPanel({
           <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">Owner dashboard</p>
           <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">Today at CleanStep</h2>
         </div>
-        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] px-4 py-3 text-right">
+        <div className="hidden rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] px-4 py-3 text-right">
           <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Today net</p>
           <p className="mt-1 text-xl font-semibold text-[#1f4b8f]">
             {formatCurrency(today.netRevenue || 0)}
@@ -264,7 +264,7 @@ function OwnerDashboardPanel({
         </div>
       )}
 
-      <div className="mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+      <div className="hidden mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
         <div className="grid gap-4 lg:grid-cols-[0.9fr_1fr_1fr_1fr_auto]">
           <div>
             <label className="text-sm font-semibold text-[#3f363a]" htmlFor="reportPreset">
@@ -346,7 +346,7 @@ function OwnerDashboardPanel({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="hidden mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricTile label="Total revenue" value={formatCurrency(today.totalRevenue || 0)} />
         <MetricTile label="Service revenue" value={formatCurrency(today.serviceRevenue || 0)} />
         <MetricTile label="Shop revenue" value={formatCurrency(today.shopRevenue || 0)} />
@@ -358,8 +358,8 @@ function OwnerDashboardPanel({
         <MetricTile label="Deliveries" value={formatNumber(today.outstandingDeliveries || 0)} tone="red" />
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+      <div className="mt-5 grid gap-4">
+        <div className="hidden rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Management report</p>
             <div className="flex flex-wrap gap-2">
@@ -569,11 +569,21 @@ function OwnerDashboardPanel({
             )}
           </div>
         </div>
+        {actionState.error && (
+          <div className="rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+            {actionState.error}
+          </div>
+        )}
+        {actionState.success && (
+          <div className="rounded-2xl border border-[#1f4b8f]/12 bg-[#eef4ff] p-4 text-sm text-[#1f4b8f]">
+            {actionState.success}
+          </div>
+        )}
       </div>
 
       <form
         onSubmit={onExpenseSubmit}
-        className="mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4"
+        className="hidden mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4"
       >
         <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Track spending</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -693,7 +703,7 @@ function OwnerDashboardPanel({
 
       <form
         onSubmit={onPriceSubmit}
-        className="mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4"
+        className="hidden mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4"
       >
         <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Service price settings</p>
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_0.7fr_1fr]">
@@ -776,7 +786,7 @@ function OwnerDashboardPanel({
         )}
       </form>
 
-      <div className="mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
+      <div className="hidden mt-5 rounded-2xl border border-[#1f4b8f]/10 bg-[#f8fbff] p-4">
         <p className="text-xs uppercase tracking-[0.18em] text-[#7b7276]">Top customers</p>
         {topCustomers.length > 0 ? (
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
