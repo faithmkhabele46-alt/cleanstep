@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import DailyFinancesAdmin from "../components/DailyFinancesAdmin";
+import ServiceVisitAdmin from "../components/ServiceVisitAdmin";
 import { formatCurrency } from "../lib/booking";
 import { formatLoyaltyPoints, getLoyaltyVisitPoints } from "../lib/loyalty";
 
@@ -973,7 +974,7 @@ export default function AdminPage() {
     const query = loyaltySearch.trim().toLowerCase();
 
     if (!query) {
-      return false;
+      return true;
     }
 
     return (
@@ -984,6 +985,7 @@ export default function AdminPage() {
   const selectedCustomer = (loyaltyState.customers || []).find(
     (customer) => customer.customerId === selectedCustomerId,
   );
+  const visibleLoyaltyCustomers = filteredCustomers.slice(0, loyaltySearch.trim() ? 12 : 24);
   const rewardReadyCustomers = loyaltyState.rewardReadyCustomers || [];
 
   if (authState.loading) {
@@ -1069,10 +1071,10 @@ export default function AdminPage() {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.28em] text-[#1f4b8f]">Admin operations</p>
-                <h1 className="mt-2 text-3xl font-semibold text-[#3f363a]">Manage loyalty visits and bookings</h1>
+                <h1 className="mt-2 text-3xl font-semibold text-[#3f363a]">Manage CleanStep services and reports</h1>
                 <p className="mt-2 max-w-2xl text-sm text-[#5c5357]">
-                  This is the operations side for Cleanstep. Booking operations stay separate from
-                  the loyalty tracker so you can manage both systems cleanly.
+                  Record customer services, loyalty points, daily finances, and booking operations
+                  from one admin workspace.
                 </p>
               </div>
             </div>
@@ -1086,11 +1088,13 @@ export default function AdminPage() {
           </div>
 
           <div className="mt-8">
-            <section className="rounded-3xl border border-[#1f4b8f]/12 bg-white p-6 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">Loyalty visit logger</p>
-              <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">Start from the admin side</h2>
+            <ServiceVisitAdmin />
+
+            <section className="mt-10 rounded-3xl border border-[#1f4b8f]/12 bg-white p-6 shadow-[0_20px_50px_rgba(31,75,143,0.08)]">
+              <p className="text-xs uppercase tracking-[0.22em] text-[#1f4b8f]">Loyalty progress</p>
+              <h2 className="mt-3 text-2xl font-semibold text-[#3f363a]">Free wash status</h2>
               <p className="mt-2 text-sm text-[#5c5357]">
-                Add the customer visit here first. Once it is saved, the customer dashboard updates automatically.
+                Search a customer to check their free-wash bar, edit details, mark a free wash given, or remove a mistaken loyalty record.
               </p>
 
               <FreeWashReadyPanel
@@ -1192,9 +1196,9 @@ export default function AdminPage() {
                     )}
                   </div>
                 )}
-                {filteredCustomers.length > 0 ? (
+                {visibleLoyaltyCustomers.length > 0 ? (
                   <div className="mt-3 grid gap-3">
-                    {filteredCustomers.slice(0, 6).map((customer) => (
+                    {visibleLoyaltyCustomers.map((customer) => (
                       <button
                         key={customer.customerId}
                         type="button"
@@ -1218,7 +1222,7 @@ export default function AdminPage() {
                   <p className="mt-3 text-sm text-[#7b7276]">
                     {loyaltySearch.trim()
                       ? "No matching loyalty customer found yet."
-                      : "Start typing a name or WhatsApp number to load an existing customer."}
+                      : "No saved loyalty customers loaded yet."}
                   </p>
                 )}
 
@@ -1248,7 +1252,7 @@ export default function AdminPage() {
                 />
               </div>
 
-              <form onSubmit={handleLoyaltySubmit} className="mt-6 space-y-4">
+              <form onSubmit={handleLoyaltySubmit} className="hidden">
                 <div>
                   <label className="text-sm font-semibold text-[#3f363a]" htmlFor="customerName">
                     Customer name

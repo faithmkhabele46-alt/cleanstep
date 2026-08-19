@@ -167,6 +167,11 @@ export default function DailyFinancesAdmin() {
     loading: false,
     error: "",
   });
+  const [fullHistoryPreviewState, setFullHistoryPreviewState] = useState({
+    loading: false,
+    error: "",
+    transactions: [],
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -571,6 +576,37 @@ export default function DailyFinancesAdmin() {
     }
   }
 
+  async function loadFullTransactionHistoryPreview() {
+    setFullHistoryPreviewState({
+      loading: true,
+      error: "",
+      transactions: [],
+    });
+
+    try {
+      const response = await fetch("/api/admin/daily-finances?export=all", {
+        cache: "no-store",
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to load the full transaction history.");
+      }
+
+      setFullHistoryPreviewState({
+        loading: false,
+        error: "",
+        transactions: buildTransactions(data.items || []),
+      });
+    } catch (error) {
+      setFullHistoryPreviewState({
+        loading: false,
+        error: error.message || "Unable to load the full transaction history.",
+        transactions: [],
+      });
+    }
+  }
+
   function printDayReport() {
     if (groupedTransactions.length === 0) {
       setSubmitState({
@@ -705,11 +741,24 @@ export default function DailyFinancesAdmin() {
             >
               {fullHistoryDownloadState.loading ? "Downloading history..." : "Download full history"}
             </button>
+            <button
+              type="button"
+              onClick={loadFullTransactionHistoryPreview}
+              disabled={fullHistoryPreviewState.loading || !financeState.configured}
+              className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f2f4f8] disabled:text-[#8c8488]"
+            >
+              {fullHistoryPreviewState.loading ? "Loading history..." : "Show full history"}
+            </button>
           </div>
 
           {fullHistoryDownloadState.error && (
             <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
               {fullHistoryDownloadState.error}
+            </div>
+          )}
+          {fullHistoryPreviewState.error && (
+            <div className="mt-4 rounded-2xl border border-[#e1251b]/16 bg-[#fff3f2] p-4 text-sm text-[#7c4642]">
+              {fullHistoryPreviewState.error}
             </div>
           )}
           <p className="mt-3 text-sm text-[#7b7276]">
@@ -1099,6 +1148,59 @@ export default function DailyFinancesAdmin() {
                   <p className="mt-4 text-sm text-[#7b7276]">Nothing has been sold yet today.</p>
                 )}
               </div>
+
+              {fullHistoryPreviewState.transactions.length > 0 && (
+                <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#7b7276]">Full saved history</p>
+                      <p className="mt-2 text-sm text-[#5c5357]">
+                        Showing {Math.min(50, fullHistoryPreviewState.transactions.length)} of{" "}
+                        {fullHistoryPreviewState.transactions.length} saved transaction
+                        {fullHistoryPreviewState.transactions.length === 1 ? "" : "s"}.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFullHistoryPreviewState({
+                          loading: false,
+                          error: "",
+                          transactions: [],
+                        })
+                      }
+                      className="rounded-full border border-[#1f4b8f]/12 bg-white px-3 py-1 text-xs font-semibold text-[#1f4b8f] hover:bg-[#eef4ff]"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {fullHistoryPreviewState.transactions.slice(0, 50).map((transaction) => (
+                      <button
+                        key={transaction.id}
+                        type="button"
+                        onClick={() => handleSaleDateChange(transaction.saleDate)}
+                        className="w-full rounded-2xl border border-[#1f4b8f]/10 bg-white p-4 text-left transition hover:bg-[#eef4ff]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-[#3f363a]">
+                              {formatTransactionTimestamp(transaction.createdAt, transaction.saleDate)}
+                            </p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#7b7276]">
+                              {transaction.paymentMethod}
+                            </p>
+                            <p className="mt-2 text-sm text-[#5c5357]">
+                              {transaction.lines.map((line) => line.productName).join(", ")}
+                            </p>
+                          </div>
+                          <p className="font-semibold text-[#1f4b8f]">{formatCurrency(transaction.total)}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>
