@@ -974,7 +974,7 @@ export default function AdminPage() {
     const query = loyaltySearch.trim().toLowerCase();
 
     if (!query) {
-      return true;
+      return false;
     }
 
     return (
@@ -985,7 +985,7 @@ export default function AdminPage() {
   const selectedCustomer = (loyaltyState.customers || []).find(
     (customer) => customer.customerId === selectedCustomerId,
   );
-  const visibleLoyaltyCustomers = filteredCustomers.slice(0, loyaltySearch.trim() ? 12 : 24);
+  const visibleLoyaltyCustomers = filteredCustomers.slice(0, 12);
   const rewardReadyCustomers = loyaltyState.rewardReadyCustomers || [];
 
   if (authState.loading) {
@@ -1222,7 +1222,7 @@ export default function AdminPage() {
                   <p className="mt-3 text-sm text-[#7b7276]">
                     {loyaltySearch.trim()
                       ? "No matching loyalty customer found yet."
-                      : "No saved loyalty customers loaded yet."}
+                      : "Search by name or WhatsApp number to load a customer."}
                   </p>
                 )}
 
