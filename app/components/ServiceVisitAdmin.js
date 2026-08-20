@@ -14,6 +14,7 @@ const emptyVisitForm = {
 };
 
 const emptyLineForm = {
+  serviceGroup: "",
   categoryCode: "",
   serviceId: "",
   quantity: 1,
@@ -47,8 +48,43 @@ const defaultReportFilters = {
   endDate: new Date().toISOString().slice(0, 10),
 };
 
+const SERVICE_GROUPS = [
+  { value: "shoes", label: "Shoes" },
+  { value: "carpets", label: "Carpets" },
+  { value: "couches", label: "Couches" },
+  { value: "bags", label: "Bags" },
+  { value: "mattresses", label: "Mattress" },
+];
+
 function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
+}
+
+function getServiceGroupForCategory(category = {}) {
+  const code = category.code || "";
+  const reportGroup = category.reportGroup || category.report_group || "";
+
+  if (reportGroup === "footwear" || code.startsWith("footwear_")) {
+    return "shoes";
+  }
+
+  if (reportGroup === "carpets" || code.startsWith("carpets_")) {
+    return "carpets";
+  }
+
+  if (code === "couches") {
+    return "couches";
+  }
+
+  if (code === "mattresses") {
+    return "mattresses";
+  }
+
+  if (reportGroup === "bags" || code === "bags") {
+    return "bags";
+  }
+
+  return "";
 }
 
 function formatNumber(value = 0) {
@@ -955,6 +991,13 @@ export default function ServiceVisitAdmin() {
     );
   }, [customerSearch, state.customers]);
 
+  const categoriesForServiceGroup = useMemo(
+    () =>
+      state.categories.filter(
+        (category) => getServiceGroupForCategory(category) === lineForm.serviceGroup,
+      ),
+    [lineForm.serviceGroup, state.categories],
+  );
   const servicesForCategory = useMemo(
     () =>
       state.services.filter(
@@ -1017,9 +1060,22 @@ export default function ServiceVisitAdmin() {
     }));
   }
 
+  function selectServiceGroup(serviceGroup) {
+    const matchingCategories = state.categories.filter(
+      (category) => getServiceGroupForCategory(category) === serviceGroup,
+    );
+
+    setLineForm({
+      ...emptyLineForm,
+      serviceGroup,
+      categoryCode: matchingCategories.length === 1 ? matchingCategories[0].code : "",
+    });
+  }
+
   function selectCategory(categoryCode) {
     setLineForm({
       ...emptyLineForm,
+      serviceGroup: lineForm.serviceGroup,
       categoryCode,
     });
   }
@@ -1065,6 +1121,7 @@ export default function ServiceVisitAdmin() {
     setVisitItems((current) => [...current, lineItem]);
     setLineForm({
       ...emptyLineForm,
+      serviceGroup: lineForm.serviceGroup,
       categoryCode: lineForm.categoryCode,
     });
   }
@@ -1525,27 +1582,49 @@ export default function ServiceVisitAdmin() {
           <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-4">
             <p className="text-sm font-semibold text-[#3f363a]">Add service item</p>
             <div className="mt-3 grid gap-3">
-              {state.categories.map((category) => (
+              {SERVICE_GROUPS.map((group) => (
                 <button
-                  key={category.code}
+                  key={group.value}
                   type="button"
-                  onClick={() => selectCategory(category.code)}
+                  onClick={() => selectServiceGroup(group.value)}
                   disabled={!state.schemaReady}
                   className={classNames(
                     "rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
-                    lineForm.categoryCode === category.code
+                    lineForm.serviceGroup === group.value
                       ? "border-[#1f4b8f] bg-[#eef4ff] text-[#1f4b8f]"
                       : "border-[#1f4b8f]/12 bg-white text-[#3f363a] hover:bg-[#eef4ff]",
                   )}
                 >
-                  {category.name}
+                  {group.label}
                 </button>
               ))}
             </div>
 
             <div className="mt-4">
+              <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceCategory">
+                Category
+              </label>
+              <select
+                id="serviceCategory"
+                value={lineForm.categoryCode}
+                onChange={(event) => selectCategory(event.target.value)}
+                disabled={!lineForm.serviceGroup || !state.schemaReady}
+                className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f] disabled:cursor-not-allowed disabled:bg-[#f4f6fa]"
+              >
+                <option value="">
+                  {lineForm.serviceGroup ? "Choose category" : "Choose shoes, carpets, couches, bags, or mattress first"}
+                </option>
+                {categoriesForServiceGroup.map((category) => (
+                  <option key={category.code} value={category.code}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-4">
               <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceItem">
-                Service
+                Option and price
               </label>
               <select
                 id="serviceItem"
@@ -1554,7 +1633,9 @@ export default function ServiceVisitAdmin() {
                 disabled={!lineForm.categoryCode || !state.schemaReady}
                 className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f] disabled:cursor-not-allowed disabled:bg-[#f4f6fa]"
               >
-                <option value="">Choose service</option>
+                <option value="">
+                  {lineForm.categoryCode ? "Choose option" : "Choose the category first"}
+                </option>
                 {servicesForCategory.map((service) => (
                   <option key={service.id} value={service.id}>
                     {service.name}
