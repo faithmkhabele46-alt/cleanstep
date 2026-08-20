@@ -55,6 +55,8 @@ const SERVICE_GROUPS = [
   { value: "bags", label: "Bags" },
   { value: "mattresses", label: "Mattress" },
 ];
+const DISCOUNTED_THIRD_PARTY_PARTNERS = new Set(["Eldoraigne", "Clubview"]);
+const THIRD_PARTY_PRICE_DISCOUNT = 10;
 
 function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -121,12 +123,52 @@ function getReportGroupLabel(value = "") {
     .join(" ");
 }
 
+function isWholeQuantityService(service) {
+  return service?.unitLabel !== "sqm";
+}
+
+function normalizeServiceQuantity(service, value) {
+  if (value === "") {
+    return "";
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number <= 0) {
+    return "";
+  }
+
+  if (isWholeQuantityService(service)) {
+    return String(Math.max(1, Math.ceil(number)));
+  }
+
+  return String(number);
+}
+
+function getThirdPartyUnitPrice(unitPrice, partner) {
+  const number = Number(unitPrice || 0);
+
+  if (DISCOUNTED_THIRD_PARTY_PARTNERS.has(partner)) {
+    return Math.max(0, number - THIRD_PARTY_PRICE_DISCOUNT);
+  }
+
+  return number;
+}
+
+function getServiceDefaultUnitPrice(service, partner) {
+  if (service?.defaultUnitPrice === null || service?.defaultUnitPrice === undefined) {
+    return "";
+  }
+
+  return String(getThirdPartyUnitPrice(service.defaultUnitPrice, partner));
+}
+
 function buildLineItem(service, lineForm) {
   if (!service) {
     return null;
   }
 
-  const quantity = Math.max(0, Number(lineForm.quantity) || 0);
+  const quantity = Number(normalizeServiceQuantity(service, lineForm.quantity)) || 0;
   const unitPrice = Math.max(0, Number(lineForm.unitPrice) || 0);
 
   if (!quantity) {
@@ -1006,6 +1048,8 @@ export default function ServiceVisitAdmin() {
     [lineForm.categoryCode, state.services],
   );
   const selectedService = state.services.find((service) => service.id === lineForm.serviceId);
+  const effectiveThirdPartyPartner =
+    visitForm.recordType === "third_party" ? visitForm.thirdPartyPartner : lineForm.thirdPartyPartner;
   const visitTotal = visitItems.reduce((sum, item) => sum + item.lineTotal, 0);
   const todaySummary = state.dailySummary.filter(
     (item) => item.visitDate === new Date().toISOString().slice(0, 10),
@@ -1019,16 +1063,42 @@ export default function ServiceVisitAdmin() {
       ...(key === "recordType" && value === "client" ? { thirdPartyPartner: "" } : {}),
     }));
 
-    if (key === "thirdPartyPartner") {
-      setLineForm((current) => ({
-        ...current,
-        thirdPartyPartner: value,
-      }));
+    if (key === "thirdPartyPartner" || key === "recordType") {
+      setLineForm((current) => {
+        const thirdPartyPartner =
+          key === "thirdPartyPartner"
+            ? value
+            : value === "client"
+              ? ""
+              : visitForm.thirdPartyPartner;
+        const defaultUnitPrice = getServiceDefaultUnitPrice(selectedService, thirdPartyPartner);
+
+        return {
+          ...current,
+          thirdPartyPartner,
+          unitPrice: defaultUnitPrice === "" ? current.unitPrice : defaultUnitPrice,
+        };
+      });
       setVisitItems((current) =>
-        current.map((item) => ({
-          ...item,
-          thirdPartyPartner: value,
-        })),
+        current.map((item) => {
+          const thirdPartyPartner =
+            key === "thirdPartyPartner"
+              ? value
+              : value === "client"
+                ? ""
+                : visitForm.thirdPartyPartner;
+          const service = state.services.find((serviceItem) => serviceItem.id === item.serviceId);
+          const recalculatedUnitPrice = getServiceDefaultUnitPrice(service, thirdPartyPartner);
+          const unitPrice =
+            recalculatedUnitPrice === "" ? item.unitPrice : Number(recalculatedUnitPrice);
+
+          return {
+            ...item,
+            thirdPartyPartner,
+            unitPrice,
+            lineTotal: item.quantity * unitPrice,
+          };
+        }),
       );
     }
 
@@ -1040,10 +1110,28 @@ export default function ServiceVisitAdmin() {
   }
 
   function updateLineField(key, value) {
-    setLineForm((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    if (key === "quantity") {
+      setLineForm((current) => ({
+        ...current,
+        quantity: normalizeServiceQuantity(selectedService, value),
+      }));
+      setSaveState((current) => ({
+        ...current,
+        error: "",
+      }));
+      return;
+    }
+
+    setLineForm((current) => {
+      const defaultUnitPrice =
+        key === "thirdPartyPartner" ? getServiceDefaultUnitPrice(selectedService, value) : "";
+
+      return {
+        ...current,
+        [key]: value,
+        ...(defaultUnitPrice !== "" ? { unitPrice: defaultUnitPrice } : {}),
+      };
+    });
     setSaveState((current) => ({
       ...current,
       error: "",
@@ -1086,10 +1174,8 @@ export default function ServiceVisitAdmin() {
     setLineForm((current) => ({
       ...current,
       serviceId,
-      unitPrice:
-        service?.defaultUnitPrice === null || service?.defaultUnitPrice === undefined
-          ? ""
-          : String(service.defaultUnitPrice),
+      quantity: normalizeServiceQuantity(service, current.quantity) || 1,
+      unitPrice: getServiceDefaultUnitPrice(service, effectiveThirdPartyPartner),
     }));
   }
 
@@ -1641,7 +1727,7 @@ export default function ServiceVisitAdmin() {
                   <option key={service.id} value={service.id}>
                     {service.name}
                     {service.defaultUnitPrice !== null
-                      ? ` - ${formatCurrency(service.defaultUnitPrice)}`
+                      ? ` - ${formatCurrency(getServiceDefaultUnitPrice(service, effectiveThirdPartyPartner))}`
                       : " - configurable"}
                   </option>
                 ))}
@@ -1656,8 +1742,8 @@ export default function ServiceVisitAdmin() {
                 <input
                   id="serviceQuantity"
                   type="number"
-                  min="0.01"
-                  step="0.01"
+                  min={isWholeQuantityService(selectedService) ? "1" : "0.01"}
+                  step={isWholeQuantityService(selectedService) ? "1" : "0.01"}
                   value={lineForm.quantity}
                   onChange={(event) => updateLineField("quantity", event.target.value)}
                   className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"

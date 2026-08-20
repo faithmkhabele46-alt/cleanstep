@@ -36,6 +36,8 @@ const MANAGEMENT_MONTHS = [
   { month: 2, year: 2027, label: "FEBRUARY" },
 ];
 const THIRD_PARTY_PARTNERS = ["Eldoraigne", "Kitwe", "Clubview"];
+const DISCOUNTED_THIRD_PARTY_PARTNERS = ["Eldoraigne", "Clubview"];
+const THIRD_PARTY_PRICE_DISCOUNT = 10;
 
 function isMissingManagementSchema(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -138,6 +140,30 @@ function getJohannesburgDateString(date = new Date()) {
   const parts = getJohannesburgDateParts(date);
 
   return `${parts.year}-${padDatePart(parts.month)}-${padDatePart(parts.day)}`;
+}
+
+function isDiscountedThirdPartyPartner(partner = "") {
+  return DISCOUNTED_THIRD_PARTY_PARTNERS.includes(partner);
+}
+
+function getDiscountedThirdPartyUnitPrice(unitPrice, partner = "") {
+  const numericUnitPrice = Number(unitPrice || 0);
+
+  if (isDiscountedThirdPartyPartner(partner)) {
+    return Math.max(0, numericUnitPrice - THIRD_PARTY_PRICE_DISCOUNT);
+  }
+
+  return numericUnitPrice;
+}
+
+function normalizeServiceQuantityForSave(service, value) {
+  const numericQuantity = Number(value || 0);
+
+  if (service?.unit_label === "sqm") {
+    return Math.max(0, numericQuantity);
+  }
+
+  return Math.max(0, Math.ceil(numericQuantity));
 }
 
 function getPeriodStarts(today) {
@@ -1420,10 +1446,21 @@ export async function POST(request) {
     const visitItems = rawItems.map((item) => {
       const service = servicesById.get(item.serviceId);
       const category = service.cleanstep_service_categories || {};
-      const quantity = Math.max(0, Number(item.quantity) || 0);
-      const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
       const thirdPartyPartner =
         recordType === "third_party" ? visitThirdPartyPartner : item.thirdPartyPartner || null;
+      const quantity = normalizeServiceQuantityForSave(service, item.quantity);
+      const submittedUnitPrice = Math.max(0, Number(item.unitPrice) || 0);
+      const defaultUnitPrice =
+        service.default_unit_price === null || service.default_unit_price === undefined
+          ? null
+          : Number(service.default_unit_price || 0);
+      const unitPrice =
+        thirdPartyPartner &&
+        isDiscountedThirdPartyPartner(thirdPartyPartner) &&
+        defaultUnitPrice !== null &&
+        Math.abs(submittedUnitPrice - defaultUnitPrice) < 0.01
+          ? getDiscountedThirdPartyUnitPrice(defaultUnitPrice, thirdPartyPartner)
+          : submittedUnitPrice;
 
       if (!quantity) {
         throw new Error("Every service item needs a quantity greater than zero.");
