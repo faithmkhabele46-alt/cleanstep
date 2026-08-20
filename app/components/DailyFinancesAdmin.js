@@ -607,6 +607,10 @@ export default function DailyFinancesAdmin() {
     }
   }
 
+  function downloadManagementReportWorkbook() {
+    window.location.href = "/api/admin/management?export=management-workbook";
+  }
+
   function printDayReport() {
     if (groupedTransactions.length === 0) {
       setSubmitState({
@@ -740,6 +744,14 @@ export default function DailyFinancesAdmin() {
               className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f2f4f8] disabled:text-[#8c8488]"
             >
               {fullHistoryDownloadState.loading ? "Downloading history..." : "Download full history"}
+            </button>
+            <button
+              type="button"
+              onClick={downloadManagementReportWorkbook}
+              disabled={!financeState.configured}
+              className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-sm font-semibold text-[#1f4b8f] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:bg-[#f2f4f8] disabled:text-[#8c8488]"
+            >
+              Download management report
             </button>
             <button
               type="button"

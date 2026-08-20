@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import ExcelJS from "exceljs";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { isAdminAuthenticated } from "../../../lib/admin-auth";
 import { createServerSupabaseClient } from "../../../lib/supabase-server";
 import {
@@ -7,6 +10,31 @@ import {
   isQualifyingLoyaltyVisit,
   normalizeWhatsAppNumber,
 } from "../../../lib/loyalty";
+
+export const runtime = "nodejs";
+
+const MANAGEMENT_REPORT_START_DATE = "2026-03-01";
+const MANAGEMENT_REPORT_END_DATE = "2027-02-28";
+const MANAGEMENT_TEMPLATE_PATH = path.join(
+  process.cwd(),
+  "public",
+  "templates",
+  "management-report-2026-2027.xlsx",
+);
+const MANAGEMENT_MONTHS = [
+  { month: 3, year: 2026, label: "MARCH" },
+  { month: 4, year: 2026, label: "APRIL" },
+  { month: 5, year: 2026, label: "MAY" },
+  { month: 6, year: 2026, label: "JUNE" },
+  { month: 7, year: 2026, label: "JULY" },
+  { month: 8, year: 2026, label: "AUGUST" },
+  { month: 9, year: 2026, label: "SEPTEMBER" },
+  { month: 10, year: 2026, label: "OCTOBER" },
+  { month: 11, year: 2026, label: "NOVEMBER" },
+  { month: 12, year: 2026, label: "DECEMBER" },
+  { month: 1, year: 2027, label: "JANUARY" },
+  { month: 2, year: 2027, label: "FEBRUARY" },
+];
 
 function isMissingManagementSchema(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -346,6 +374,216 @@ function buildCsvResponse(filename, headers, rows) {
   });
 }
 
+function getManagementMonthMeta(dateString = "") {
+  const [year, month, day] = String(dateString).split("-").map(Number);
+  const monthMeta = MANAGEMENT_MONTHS.find(
+    (item) => item.year === year && item.month === month,
+  );
+
+  if (!monthMeta || !day) {
+    return null;
+  }
+
+  return {
+    ...monthMeta,
+    day,
+    rowNumber: 7 + day,
+  };
+}
+
+function getManagementSheet(workbook, prefix, monthMeta) {
+  const sheetPrefix = `${prefix} ${monthMeta.label} ${monthMeta.year}`;
+
+  return workbook.worksheets.find((sheet) => sheet.name.startsWith(sheetPrefix)) || null;
+}
+
+function getEmptyWorkbookTotals() {
+  return {
+    footwear: 0,
+    carpets: 0,
+    upholstery: 0,
+    print: 0,
+    retail: 0,
+    kitwe: 0,
+    eldoraigne: 0,
+  };
+}
+
+function ensureWorkbookDayTotals(totalsByDate, dateString) {
+  if (!totalsByDate.has(dateString)) {
+    totalsByDate.set(dateString, getEmptyWorkbookTotals());
+  }
+
+  return totalsByDate.get(dateString);
+}
+
+function getWorkbookServiceGroup(reportGroup = "") {
+  const normalizedGroup = normalizeManagementReportGroup(reportGroup);
+
+  if (normalizedGroup === "footwear" || normalizedGroup === "bags") {
+    return "footwear";
+  }
+
+  if (normalizedGroup === "carpets") {
+    return "carpets";
+  }
+
+  if (normalizedGroup === "upholstery") {
+    return "upholstery";
+  }
+
+  return "";
+}
+
+function getWorkbookShopSaleGroup(row) {
+  const group = getShopSaleReportGroup(row);
+
+  return group === "print_copies" ? "print" : "retail";
+}
+
+function setWorkbookNumber(sheet, rowNumber, columnNumber, value) {
+  const numericValue = Number(value || 0);
+  sheet.getRow(rowNumber).getCell(columnNumber).value = numericValue > 0 ? numericValue : null;
+}
+
+function fillManagementWorkbook(workbook, totalsByDate) {
+  totalsByDate.forEach((totals, dateString) => {
+    const monthMeta = getManagementMonthMeta(dateString);
+
+    if (!monthMeta) {
+      return;
+    }
+
+    const shopSheet = getManagementSheet(workbook, "SHOP", monthMeta);
+    const thirdPartySheet = getManagementSheet(workbook, "THIRD PARTY", monthMeta);
+
+    if (shopSheet) {
+      setWorkbookNumber(shopSheet, monthMeta.rowNumber, 3, totals.footwear);
+      setWorkbookNumber(shopSheet, monthMeta.rowNumber, 4, totals.carpets);
+      setWorkbookNumber(shopSheet, monthMeta.rowNumber, 5, totals.upholstery);
+      setWorkbookNumber(shopSheet, monthMeta.rowNumber, 6, totals.print);
+      setWorkbookNumber(shopSheet, monthMeta.rowNumber, 7, totals.retail);
+    }
+
+    if (thirdPartySheet) {
+      setWorkbookNumber(thirdPartySheet, monthMeta.rowNumber, 3, totals.kitwe);
+      setWorkbookNumber(thirdPartySheet, monthMeta.rowNumber, 4, totals.eldoraigne);
+    }
+  });
+}
+
+async function loadPagedRows(fetchPage) {
+  const rows = [];
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await fetchPage(from, from + pageSize - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const pageRows = data || [];
+    rows.push(...pageRows);
+
+    if (pageRows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return rows;
+}
+
+async function loadManagementWorkbookExport(supabase) {
+  const [serviceItems, shopSales] = await Promise.all([
+    loadPagedRows((from, to) =>
+      supabase
+        .from("cleanstep_visit_items")
+        .select(
+          "report_group_snapshot, line_total, third_party_partner, cleanstep_visits!inner(visit_date, status)",
+        )
+        .gte("cleanstep_visits.visit_date", MANAGEMENT_REPORT_START_DATE)
+        .lte("cleanstep_visits.visit_date", MANAGEMENT_REPORT_END_DATE)
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    loadPagedRows((from, to) =>
+      supabase
+        .from("daily_finance_sales")
+        .select("sale_date, category, product_name, total")
+        .gte("sale_date", MANAGEMENT_REPORT_START_DATE)
+        .lte("sale_date", MANAGEMENT_REPORT_END_DATE)
+        .order("sale_date", { ascending: true })
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+  ]);
+  const totalsByDate = new Map();
+
+  serviceItems.forEach((item) => {
+    const visit = Array.isArray(item.cleanstep_visits)
+      ? item.cleanstep_visits[0]
+      : item.cleanstep_visits;
+    const visitDate = visit?.visit_date || "";
+
+    if (!visitDate || visit.status === "cancelled") {
+      return;
+    }
+
+    const dayTotals = ensureWorkbookDayTotals(totalsByDate, visitDate);
+    const amount = Number(item.line_total || 0);
+    const partner = String(item.third_party_partner || "").toLowerCase();
+
+    if (partner.includes("kitwe")) {
+      dayTotals.kitwe += amount;
+      return;
+    }
+
+    if (partner.includes("eldo")) {
+      dayTotals.eldoraigne += amount;
+      return;
+    }
+
+    const workbookGroup = getWorkbookServiceGroup(item.report_group_snapshot);
+
+    if (workbookGroup) {
+      dayTotals[workbookGroup] += amount;
+    }
+  });
+
+  shopSales.forEach((sale) => {
+    const saleDate = sale.sale_date || "";
+
+    if (!saleDate) {
+      return;
+    }
+
+    const dayTotals = ensureWorkbookDayTotals(totalsByDate, saleDate);
+    const workbookGroup = getWorkbookShopSaleGroup(sale);
+    dayTotals[workbookGroup] += Number(sale.total || 0);
+  });
+
+  const templateBuffer = await fs.readFile(MANAGEMENT_TEMPLATE_PATH);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(templateBuffer);
+  workbook.calcProperties.fullCalcOnLoad = true;
+  fillManagementWorkbook(workbook, totalsByDate);
+
+  const outputBuffer = await workbook.xlsx.writeBuffer();
+
+  return new NextResponse(outputBuffer, {
+    headers: {
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition":
+        'attachment; filename="cleanstep-management-report-2026-2027.xlsx"',
+    },
+  });
+}
+
 function mapVisitItemExportRow(item) {
   const visit = item.cleanstep_visits || {};
 
@@ -371,6 +609,10 @@ function mapVisitItemExportRow(item) {
 }
 
 async function loadManagementExport(supabase, exportType) {
+  if (exportType === "management-workbook") {
+    return loadManagementWorkbookExport(supabase);
+  }
+
   if (exportType === "expenses") {
     const { data, error } = await supabase
       .from("cleanstep_expenses")
