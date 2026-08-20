@@ -36,8 +36,23 @@ const MANAGEMENT_MONTHS = [
   { month: 2, year: 2027, label: "FEBRUARY" },
 ];
 const THIRD_PARTY_PARTNERS = ["Eldoraigne", "Kitwe", "Clubview"];
+const DELIVERY_THIRD_PARTY_PARTNERS = ["Eldoraigne", "Kitwe"];
 const DISCOUNTED_THIRD_PARTY_PARTNERS = ["Eldoraigne", "Clubview"];
 const THIRD_PARTY_PRICE_DISCOUNT = 10;
+const THIRD_PARTY_INTERNAL_CUSTOMERS = {
+  Eldoraigne: {
+    customerName: "CleanStep Third Party - Eldoraigne",
+    whatsAppNumber: "27000000001",
+  },
+  Kitwe: {
+    customerName: "CleanStep Third Party - Kitwe",
+    whatsAppNumber: "27000000002",
+  },
+  Clubview: {
+    customerName: "CleanStep Third Party - Clubview",
+    whatsAppNumber: "27000000003",
+  },
+};
 
 function isMissingManagementSchema(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -144,6 +159,10 @@ function getJohannesburgDateString(date = new Date()) {
 
 function isDiscountedThirdPartyPartner(partner = "") {
   return DISCOUNTED_THIRD_PARTY_PARTNERS.includes(partner);
+}
+
+function isDeliveryThirdPartyPartner(partner = "") {
+  return DELIVERY_THIRD_PARTY_PARTNERS.includes(partner);
 }
 
 function getDiscountedThirdPartyUnitPrice(unitPrice, partner = "") {
@@ -748,7 +767,13 @@ async function loadCustomers(supabase) {
     throw error;
   }
 
-  return (data || []).map(mapCustomer);
+  const internalThirdPartyNumbers = new Set(
+    Object.values(THIRD_PARTY_INTERNAL_CUSTOMERS).map((customer) => customer.whatsAppNumber),
+  );
+
+  return (data || [])
+    .filter((customer) => !internalThirdPartyNumbers.has(customer.whatsapp_number))
+    .map(mapCustomer);
 }
 
 async function loadManagementData(supabase) {
@@ -1387,21 +1412,38 @@ export async function POST(request) {
       return await saveExpenseRecord(supabase, body);
     }
 
-    const customerName = body.customerName?.trim();
-    const whatsAppNumber = normalizeWhatsAppNumber(body.whatsAppNumber);
     const visitDate = body.visitDate;
     const paymentMethod = body.paymentMethod || "unpaid";
     const recordType = body.recordType === "third_party" ? "third_party" : "client";
     const visitThirdPartyPartner = body.thirdPartyPartner || null;
+    const thirdPartyCustomer = THIRD_PARTY_INTERNAL_CUSTOMERS[visitThirdPartyPartner] || null;
+    const customerName =
+      recordType === "third_party"
+        ? thirdPartyCustomer?.customerName || ""
+        : body.customerName?.trim();
+    const whatsAppNumber =
+      recordType === "third_party"
+        ? thirdPartyCustomer?.whatsAppNumber || ""
+        : normalizeWhatsAppNumber(body.whatsAppNumber);
     const notes = body.notes?.trim() || null;
     const receivedAt = body.receivedAt ? new Date(body.receivedAt) : new Date();
     const rawItems = Array.isArray(body.items) ? body.items : [];
 
-    if (!customerName || !whatsAppNumber || !visitDate || rawItems.length === 0) {
+    if (recordType === "client" && (!customerName || !whatsAppNumber)) {
       return NextResponse.json(
         {
           saved: false,
-          message: "Customer, WhatsApp number, visit date, and at least one service item are required.",
+          message: "Customer and WhatsApp number are required for client records.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!visitDate || rawItems.length === 0) {
+      return NextResponse.json(
+        {
+          saved: false,
+          message: "Visit date and at least one service item are required.",
         },
         { status: 400 },
       );
@@ -1531,7 +1573,9 @@ export async function POST(request) {
       third_party_partner: item.thirdPartyPartner,
       prep_status: "waiting",
       prep_due_at: prepDueAt,
-      delivery_status: item.thirdPartyPartner ? "required" : "not_required",
+      delivery_status: isDeliveryThirdPartyPartner(item.thirdPartyPartner)
+        ? "required"
+        : "not_required",
       notes: item.notes,
     }));
 
@@ -1543,13 +1587,16 @@ export async function POST(request) {
       throw itemsError;
     }
 
-    const loyaltyMirror = await saveLoyaltyMirrorVisit(
-      supabase,
-      customerId,
-      visitDate,
-      visitItems,
-      savedVisit.id,
-    );
+    const loyaltyMirror =
+      recordType === "client"
+        ? await saveLoyaltyMirrorVisit(
+            supabase,
+            customerId,
+            visitDate,
+            visitItems,
+            savedVisit.id,
+          )
+        : null;
 
     return NextResponse.json({
       saved: true,

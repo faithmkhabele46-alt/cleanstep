@@ -56,6 +56,7 @@ const SERVICE_GROUPS = [
   { value: "mattresses", label: "Mattress" },
 ];
 const DISCOUNTED_THIRD_PARTY_PARTNERS = new Set(["Eldoraigne", "Clubview"]);
+const DELIVERY_THIRD_PARTY_PARTNERS = new Set(["Eldoraigne", "Kitwe"]);
 const THIRD_PARTY_PRICE_DISCOUNT = 10;
 
 function classNames(...parts) {
@@ -163,6 +164,10 @@ function getServiceDefaultUnitPrice(service, partner) {
   return String(getThirdPartyUnitPrice(service.defaultUnitPrice, partner));
 }
 
+function getThirdPartyTaskLabel(partner = "") {
+  return DELIVERY_THIRD_PARTY_PARTNERS.has(partner) ? "delivery" : "collection";
+}
+
 function buildLineItem(service, lineForm) {
   if (!service) {
     return null;
@@ -209,6 +214,24 @@ function buildWhatsAppHref(number, item) {
   } ready for collection at CleanStep.`;
 
   return `https://wa.me/${internationalNumber}?text=${encodeURIComponent(message)}`;
+}
+
+function getPrepTaskName(item) {
+  return item.thirdPartyPartner || item.customerName;
+}
+
+function getPrepTaskDetail(item) {
+  const quantityLabel = `${formatNumber(item.quantity)} ${item.serviceName}`;
+
+  if (item.thirdPartyPartner === "Clubview") {
+    return `${quantityLabel} - WhatsApp Clubview for collection`;
+  }
+
+  if (item.thirdPartyPartner) {
+    return `${quantityLabel} - prepare for ${item.thirdPartyPartner} delivery`;
+  }
+
+  return `${quantityLabel} - due ${item.prepDueAt ? item.prepDueAt.slice(0, 10) : "not set"}`;
 }
 
 function RecentServiceVisitCard({ visit, onDeleteVisit, loadingAction }) {
@@ -576,10 +599,8 @@ function OwnerDashboardPanel({
               <div className="mt-3 space-y-2">
                 {prepItems.slice(0, 4).map((item) => (
                   <div key={item.id} className="rounded-2xl border border-[#1f4b8f]/8 bg-white px-4 py-3 text-sm">
-                    <p className="font-semibold text-[#3f363a]">{item.customerName}</p>
-                    <p className="mt-1 text-[#5c5357]">
-                      {formatNumber(item.quantity)} {item.serviceName} - due {item.prepDueAt ? item.prepDueAt.slice(0, 10) : "not set"}
-                    </p>
+                    <p className="font-semibold text-[#3f363a]">{getPrepTaskName(item)}</p>
+                    <p className="mt-1 text-[#5c5357]">{getPrepTaskDetail(item)}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -589,7 +610,7 @@ function OwnerDashboardPanel({
                       >
                         Mark ready
                       </button>
-                      {buildWhatsAppHref(item.whatsAppNumber, item) && (
+                      {!item.thirdPartyPartner && buildWhatsAppHref(item.whatsAppNumber, item) && (
                         <a
                           href={buildWhatsAppHref(item.whatsAppNumber, item)}
                           target="_blank"
@@ -1309,8 +1330,8 @@ export default function ServiceVisitAdmin() {
       setLineForm(emptyLineForm);
       setVisitForm((current) => ({
         ...emptyVisitForm,
-        customerName: current.customerName,
-        whatsAppNumber: current.whatsAppNumber,
+        customerName: visitForm.recordType === "client" ? current.customerName : "",
+        whatsAppNumber: visitForm.recordType === "client" ? current.whatsAppNumber : "",
       }));
       await refreshManagementData();
     } catch (error) {
@@ -1565,60 +1586,64 @@ export default function ServiceVisitAdmin() {
 
       <form onSubmit={handleSaveVisit} className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-4">
-          <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-4">
-            <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceCustomerSearch">
-              Search customer
-            </label>
-            <input
-              id="serviceCustomerSearch"
-              value={customerSearch}
-              onChange={(event) => setCustomerSearch(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
-              placeholder="Search by name or WhatsApp number"
-            />
-            {filteredCustomers.length > 0 && (
-              <div className="mt-3 grid gap-3">
-                {filteredCustomers.slice(0, 5).map((customer) => (
-                  <button
-                    key={customer.customerId}
-                    type="button"
-                    onClick={() => selectCustomer(customer)}
-                    className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-left transition hover:bg-[#eef4ff]"
-                  >
-                    <p className="font-semibold text-[#3f363a]">{customer.customerName}</p>
-                    <p className="mt-1 text-sm text-[#5c5357]">{customer.whatsAppNumber}</p>
-                  </button>
-                ))}
+          {visitForm.recordType === "client" && (
+            <>
+              <div className="rounded-3xl border border-[#1f4b8f]/12 bg-[#f8fbff] p-4">
+                <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceCustomerSearch">
+                  Search customer
+                </label>
+                <input
+                  id="serviceCustomerSearch"
+                  value={customerSearch}
+                  onChange={(event) => setCustomerSearch(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                  placeholder="Search by name or WhatsApp number"
+                />
+                {filteredCustomers.length > 0 && (
+                  <div className="mt-3 grid gap-3">
+                    {filteredCustomers.slice(0, 5).map((customer) => (
+                      <button
+                        key={customer.customerId}
+                        type="button"
+                        onClick={() => selectCustomer(customer)}
+                        className="rounded-2xl border border-[#1f4b8f]/12 bg-white px-4 py-3 text-left transition hover:bg-[#eef4ff]"
+                      >
+                        <p className="font-semibold text-[#3f363a]">{customer.customerName}</p>
+                        <p className="mt-1 text-sm text-[#5c5357]">{customer.whatsAppNumber}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceCustomerName">
-                Customer name
-              </label>
-              <input
-                id="serviceCustomerName"
-                value={visitForm.customerName}
-                onChange={(event) => updateVisitField("customerName", event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
-                placeholder="Customer full name"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceWhatsApp">
-                WhatsApp number
-              </label>
-              <input
-                id="serviceWhatsApp"
-                value={visitForm.whatsAppNumber}
-                onChange={(event) => updateVisitField("whatsAppNumber", event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
-                placeholder="e.g. 069 110 2046"
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceCustomerName">
+                    Customer name
+                  </label>
+                  <input
+                    id="serviceCustomerName"
+                    value={visitForm.customerName}
+                    onChange={(event) => updateVisitField("customerName", event.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                    placeholder="Customer full name"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-[#3f363a]" htmlFor="serviceWhatsApp">
+                    WhatsApp number
+                  </label>
+                  <input
+                    id="serviceWhatsApp"
+                    value={visitForm.whatsAppNumber}
+                    onChange={(event) => updateVisitField("whatsAppNumber", event.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-[#1f4b8f]/12 bg-[#f8fbff] px-4 py-4 text-[#3f363a] outline-none transition focus:border-[#1f4b8f]"
+                    placeholder="e.g. 069 110 2046"
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
@@ -1853,7 +1878,7 @@ export default function ServiceVisitAdmin() {
                         </p>
                         {item.thirdPartyPartner && (
                           <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#e1251b]">
-                            {item.thirdPartyPartner} delivery
+                            {item.thirdPartyPartner} {getThirdPartyTaskLabel(item.thirdPartyPartner)}
                           </p>
                         )}
                       </div>
