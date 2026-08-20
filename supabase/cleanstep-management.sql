@@ -78,7 +78,7 @@ create table if not exists public.cleanstep_visit_items (
   line_total numeric(10,2) generated always as ((quantity * unit_price)::numeric(10,2)) stored,
   loyalty_eligible_snapshot boolean not null default false,
   third_party_partner text check (
-    third_party_partner is null or third_party_partner in ('Eldoraigne', 'Kitwe')
+    third_party_partner is null or third_party_partner in ('Eldoraigne', 'Kitwe', 'Clubview')
   ),
   prep_status text not null default 'waiting' check (
     prep_status in ('waiting', 'to_prepare', 'ready', 'not_required')
@@ -96,7 +96,7 @@ create table if not exists public.cleanstep_visit_items (
 
 create table if not exists public.cleanstep_third_party_deliveries (
   id uuid primary key default gen_random_uuid(),
-  partner text not null check (partner in ('Eldoraigne', 'Kitwe')),
+  partner text not null check (partner in ('Eldoraigne', 'Kitwe', 'Clubview')),
   delivery_date date not null,
   status text not null default 'required' check (status in ('required', 'delivered', 'cancelled')),
   notes text,
@@ -158,6 +158,22 @@ alter table public.cleanstep_visit_items enable row level security;
 alter table public.cleanstep_third_party_deliveries enable row level security;
 alter table public.cleanstep_third_party_delivery_items enable row level security;
 alter table public.cleanstep_expenses enable row level security;
+
+alter table public.cleanstep_visit_items
+drop constraint if exists cleanstep_visit_items_third_party_partner_check;
+
+alter table public.cleanstep_visit_items
+add constraint cleanstep_visit_items_third_party_partner_check
+check (
+  third_party_partner is null or third_party_partner in ('Eldoraigne', 'Kitwe', 'Clubview')
+);
+
+alter table public.cleanstep_third_party_deliveries
+drop constraint if exists cleanstep_third_party_deliveries_partner_check;
+
+alter table public.cleanstep_third_party_deliveries
+add constraint cleanstep_third_party_deliveries_partner_check
+check (partner in ('Eldoraigne', 'Kitwe', 'Clubview'));
 
 alter table public.cleanstep_service_categories
 drop constraint if exists cleanstep_service_categories_report_group_check;

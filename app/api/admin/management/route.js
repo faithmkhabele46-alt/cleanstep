@@ -35,6 +35,7 @@ const MANAGEMENT_MONTHS = [
   { month: 1, year: 2027, label: "JANUARY" },
   { month: 2, year: 2027, label: "FEBRUARY" },
 ];
+const THIRD_PARTY_PARTNERS = ["Eldoraigne", "Kitwe", "Clubview"];
 
 function isMissingManagementSchema(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -406,6 +407,7 @@ function getEmptyWorkbookTotals() {
     retail: 0,
     kitwe: 0,
     eldoraigne: 0,
+    clubview: 0,
   };
 }
 
@@ -468,6 +470,7 @@ function fillManagementWorkbook(workbook, totalsByDate) {
     if (thirdPartySheet) {
       setWorkbookNumber(thirdPartySheet, monthMeta.rowNumber, 3, totals.kitwe);
       setWorkbookNumber(thirdPartySheet, monthMeta.rowNumber, 4, totals.eldoraigne);
+      setWorkbookNumber(thirdPartySheet, monthMeta.rowNumber, 5, totals.clubview);
     }
   });
 }
@@ -544,6 +547,11 @@ async function loadManagementWorkbookExport(supabase) {
 
     if (partner.includes("eldo")) {
       dayTotals.eldoraigne += amount;
+      return;
+    }
+
+    if (partner.includes("clubview")) {
+      dayTotals.clubview += amount;
       return;
     }
 
@@ -1375,12 +1383,12 @@ export async function POST(request) {
 
     if (
       recordType === "third_party" &&
-      !["Eldoraigne", "Kitwe"].includes(visitThirdPartyPartner)
+      !THIRD_PARTY_PARTNERS.includes(visitThirdPartyPartner)
     ) {
       return NextResponse.json(
         {
           saved: false,
-          message: "Choose Eldoraigne or Kitwe before saving a third-party record.",
+          message: "Choose Eldoraigne, Kitwe, or Clubview before saving a third-party record.",
         },
         { status: 400 },
       );
@@ -1421,8 +1429,8 @@ export async function POST(request) {
         throw new Error("Every service item needs a quantity greater than zero.");
       }
 
-      if (thirdPartyPartner && !["Eldoraigne", "Kitwe"].includes(thirdPartyPartner)) {
-        throw new Error("Third-party partner must be Eldoraigne or Kitwe.");
+      if (thirdPartyPartner && !THIRD_PARTY_PARTNERS.includes(thirdPartyPartner)) {
+        throw new Error("Third-party partner must be Eldoraigne, Kitwe, or Clubview.");
       }
 
       return {

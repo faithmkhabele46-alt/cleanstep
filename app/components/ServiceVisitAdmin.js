@@ -1112,7 +1112,7 @@ export default function ServiceVisitAdmin() {
     if (visitForm.recordType === "third_party" && !visitForm.thirdPartyPartner) {
       setSaveState({
         loading: false,
-        error: "Choose Eldoraigne or Kitwe before adding a third-party item.",
+        error: "Choose Eldoraigne, Kitwe, or Clubview before adding a third-party item.",
         success: "",
       });
       return;
@@ -1471,6 +1471,7 @@ export default function ServiceVisitAdmin() {
               <option value="">Choose partner</option>
               <option value="Eldoraigne">Eldoraigne</option>
               <option value="Kitwe">Kitwe</option>
+              <option value="Clubview">Clubview</option>
             </select>
           </div>
         )}
@@ -1694,6 +1695,7 @@ export default function ServiceVisitAdmin() {
                     <option value="">No</option>
                     <option value="Eldoraigne">Eldoraigne</option>
                     <option value="Kitwe">Kitwe</option>
+                    <option value="Clubview">Clubview</option>
                   </select>
                 </div>
               ) : (
